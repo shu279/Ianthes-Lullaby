@@ -60,10 +60,11 @@ The MVP should prove that the sleep routine, character interaction, calming audi
 ## AI Components
 | Component | Role | Phase |
 |-----------|------|-------|
-| LLM conversation | Generates short Ianthe replies that respect bedtime mode and her fixed adorable, loving personality | MVP |
+| Local LLM conversation | Generates short Ianthe replies on the user's own computer, minimizing hosted server and GPU cost | MVP |
 | Structured output | Returns only the character-facing response fields: reply, emotion, animation, and optional voice style | MVP |
 | Audio playback | Plays one shuffled sleep BGM playlist, goodnight clips, and prepared ASMR-style audio | MVP |
 | Idle detection | Detects no chat or touch interaction and triggers automatic sleep mode | MVP |
+| AI provider adapter | Starts with Ollama at `localhost:11434`, with optional later adapters for LM Studio, WebLLM, or cloud APIs | MVP |
 | VOICEVOX speech | Converts English replies into katakana-style pronunciation and synthesizes cute character voice audio | Phase 2 |
 | Lip sync | Maps spoken text or generated audio timing to the character's `a/e/i/o/u` mouth shape keys | Phase 2 |
 | Text-to-speech | Generates dynamic spoken replies with other TTS providers if natural English is needed | Phase 2 |
@@ -99,7 +100,9 @@ For dynamic voice, the app can estimate mouth movement from the spoken text or f
 For prepared goodnight or ASMR-style audio, the first version can use a simpler fallback: open and close the mouth based on audio volume, then add more accurate `a/e/i/o/u` timing later.
 
 ## Technical Architecture
-The recommended architecture is a web-first stack that can be developed in VS Code and deployed as a shareable demo. This keeps the character, audio, and AI interaction easy to share through a browser link.
+The recommended architecture is a local-first web stack that can be developed in VS Code and deployed as a shareable demo. The core viewer, character controls, sleep UI, and audio systems run in the browser. AI chat should default to a local model running on the user's own computer so the project does not depend on hosted GPU inference for casual bedtime conversation.
+
+The MVP should use a small local instruct/chat model through Ollama. Ianthe's conversation does not require a highly capable frontier model because the app only needs short, gentle replies and simple structured metadata. Cloud AI can remain an optional fallback for users who explicitly configure it, but it should not be required for the main experience.
 
 ### Recommended Stack
 | Area | Tool | Purpose |
@@ -109,19 +112,36 @@ The recommended architecture is a web-first stack that can be developed in VS Co
 | 3D rendering | Three.js with React Three Fiber | Browser-based 3D scene |
 | Avatar format | VRM | Portable humanoid character model |
 | VRM runtime | `@pixiv/three-vrm` | Load and control VRM avatars |
-| AI backend | OpenAI API or equivalent LLM API | Conversation and structured character commands |
+| AI backend | Ollama local API first; optional LM Studio, WebLLM, or cloud API adapters later | Low-cost conversation and structured character commands |
 | Voice synthesis | VOICEVOX engine | Stylized Japanese character voice using katakana English |
 | Text conversion | Katakana English converter | Converts English dialogue into Japanese-readable pronunciation text |
 | Lip sync | Shape-key viseme controller | Drives Blender `a/e/i/o/u` mouth shapes during speech |
-| Vector search | Local embeddings or hosted vector database | Retrieves approved style examples |
+| Vector search | Local embeddings first; hosted vector database only if needed later | Retrieves approved style examples without default server cost |
 | Storage | LocalStorage first; SQLite or Supabase later | Settings, music on/off preference, recent sleep preferences, and approved style examples |
 | Deployment | Vercel or similar | Public web demo |
+
+### Local AI Strategy
+The app should minimize server cost by running casual AI conversation on the user's own machine whenever possible.
+
+Default MVP path:
+- The user installs Ollama locally.
+- The user downloads a small chat/instruct model.
+- The app sends chat requests to `http://localhost:11434`.
+- The local model returns structured JSON matching the AI response contract.
+
+Optional later paths:
+- LM Studio local server for users who prefer a desktop model manager.
+- WebLLM for fully browser-side inference on WebGPU-capable devices.
+- Cloud API fallback for deployed demos where local AI is unavailable or explicitly disabled.
+
+Important deployment note: a hosted web server cannot directly access the user's local model. For a deployed browser app, the browser client should call the user's `localhost` Ollama endpoint directly after the user enables local AI. The app should show a clear fallback state when local AI is not running.
 
 ### System Flow
 ```text
 User input
   -> Chat UI
-  -> API route / AI service
+  -> AI provider adapter
+  -> Local Ollama endpoint on the user's computer by default
   -> Optional retrieval of style examples from approved Discord messages
   -> AI returns { reply, emotion, animation, voice_style }
   -> Optional English-to-katakana conversion for VOICEVOX
@@ -152,6 +172,10 @@ ianthes-lullaby/
     ai.ts
     audio.ts
     characterState.ts
+    aiProvider.ts
+    aiProviders/
+      ollama.ts
+      cloud.ts
     idleDetection.ts
     lipSync.ts
     sleepSession.ts
@@ -174,9 +198,9 @@ ianthes-lullaby/
 ```
 
 ### Style Imitation Approach
-Ianthe can later imitate the user's communication style using system prompting and RAG instead of fine-tuning. The app stores approved examples from the user's past Discord messages, embeds them, and retrieves several relevant examples for each chat context.
+Ianthe can later imitate the user's communication style using system prompting and local RAG instead of fine-tuning. The app stores approved examples from the user's past Discord messages, embeds them, and retrieves several relevant examples for each chat context.
 
-Those examples are passed to the model as style references. The model should copy broad patterns such as tone, wording, humour, sentence length, and casual expressions, while still following the current sleep-mode rules and safety boundaries. This approach is easier to update and safer than training a custom model because the base model is not permanently changed.
+Those examples are passed to the local model as style references. The model should copy broad patterns such as tone, wording, humour, sentence length, and casual expressions, while still following the current sleep-mode rules and safety boundaries. This approach is easier to update and safer than training a custom model because the base model is not permanently changed.
 
 ### VOICEVOX Katakana English Speech
 Ianthe can use VOICEVOX for a cute, anime-style voice. Because VOICEVOX is mainly designed for Japanese speech synthesis, the app should not expect native English pronunciation directly. Instead, English replies can be converted into katakana-style pronunciation before being sent to VOICEVOX.
@@ -256,7 +280,7 @@ The build should be handled in two tracks: asset/content preparation by the huma
 | 4 | Render Ianthe | Confirm model scale, default camera angle, and preferred framing | Implement `CharacterCanvas`, `VRMCharacter`, camera controls, and idle animation | Ianthe appears in the browser and can be viewed from different angles |
 | 5 | Add sleep UI and audio controls | Choose initial background options and provide BGM on/off label | Implement sleep session UI, BGM on/off toggle, shuffled BGM playback, background switching, and dimmed bedtime UI | User can start a sleep session, toggle music, and control the visual atmosphere |
 | 6 | Add automatic sleep mode | Choose idle timeout, target dim level, and target lowered BGM volume | Implement idle detection, automatic dimming, gradual BGM volume lowering, and restore-on-interaction | No chat/touch for the timeout lowers brightness and BGM volume; interaction restores them |
-| 7 | Add text chat and structured AI | Provide API key/configuration and approve Ianthe's tone | Implement chat UI, API route, system prompt, JSON parsing, validation, and error states | Ianthe replies in structured JSON and the UI remains stable |
+| 7 | Add text chat and structured local AI | Install Ollama, choose a small local model, and approve Ianthe's tone | Implement chat UI, local AI provider adapter, system prompt, JSON parsing, validation, and error states | Ianthe replies from a local model in structured JSON and the UI remains stable |
 | 8 | Map AI to character behavior | Confirm when conversational reactions should use `idle`, `surprise`, or `laugh` | Map `emotion`, AI-selectable `animation`, and `voice_style` to character state while keeping intro, pose, attack, sleep, screen, audio, and lip-sync behavior in frontend state machines | AI replies can trigger simple conversational reactions without controlling unrelated UI behavior |
 | 9 | Polish MVP | Review wording, screenshots, and demo flow | Fix UI spacing, loading states, fallback states, README, and deployment settings | The MVP is presentable as a portfolio demo |
 
@@ -268,7 +292,7 @@ The build should be handled in two tracks: asset/content preparation by the huma
 | 3 | Add katakana English conversion | Approve conversion style and examples | Implement `kanaEnglish.ts` and connect it before VOICEVOX synthesis | English replies are converted into cute katakana-style pronunciation |
 | 4 | Add lip sync | Confirm exported mouth shape key names match `a`, `e`, `i`, `o`, `u` | Implement `LipSyncController` and `lipSync.ts` using audio amplitude first, then viseme timing | Ianthe's mouth moves while voice audio plays |
 | 5 | Add memory | Decide what may be stored locally | Store name, BGM on/off preference, preferred background, favorite audio, and recent sleep settings | Returning users get personalized defaults |
-| 6 | Add style RAG | Export and approve safe messaging examples | Clean/import examples, generate embeddings, retrieve style references, and inject them into the prompt | Ianthe can imitate broad communication style without fine-tuning |
+| 6 | Add local style RAG | Export and approve safe messaging examples | Clean/import examples, generate local embeddings where practical, retrieve style references, and inject them into the prompt | Ianthe can imitate broad communication style without fine-tuning or default hosted inference |
 | 7 | Add real-time voice | Choose whether real-time voice is worth the extra complexity | Add speech input/output and low-latency interaction flow | The user can speak with Ianthe instead of only typing |
 | 8 | Mobile optimization | Review mobile layout and touch behavior | Adapt layout, camera controls, and audio controls for mobile screens | The app is usable on mobile without layout breakage |
 
@@ -277,5 +301,8 @@ The build should be handled in two tracks: asset/content preparation by the huma
 - `@pixiv/three-vrm` documentation: https://pixiv.github.io/three-vrm/
 - `@pixiv/three-vrm` GitHub repository: https://github.com/pixiv/three-vrm
 - React Three Fiber documentation: https://r3f.docs.pmnd.rs/getting-started/introduction
+- Ollama API documentation: https://github.com/ollama/ollama/blob/main/docs/api.md
+- LM Studio OpenAI-compatible local server: https://lmstudio.ai/docs/developer/openai-compat
+- WebLLM documentation: https://webllm.mlc.ai/docs/
 - OpenAI Realtime and audio guide: https://developers.openai.com/api/docs/guides/realtime
 - OpenAI Realtime API with WebRTC: https://developers.openai.com/api/docs/guides/realtime-webrtc
