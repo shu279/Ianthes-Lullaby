@@ -3,18 +3,25 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import {
+  AdditiveBlending,
   AnimationAction,
   AnimationClip,
   AnimationMixer,
+  BackSide,
   CanvasTexture,
   Color,
   Material,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   MeshToonMaterial,
   NearestFilter,
   Group,
   LoopRepeat,
+  ShaderMaterial,
+  SkinnedMesh,
+  Texture,
+  TextureLoader,
 } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import type { AnimationStatus } from "./VRMCharacter";
@@ -36,6 +43,164 @@ type LoadedState = {
   hips?: Group;
 };
 
+type MaskTextures = {
+  metallic: Texture;
+  emission: Texture;
+};
+
+function addAnimeOutlines(root: Group) {
+  const outlineMaterial = new ShaderMaterial({
+    uniforms: {
+      color: { value: new Color("#2b2025") },
+      thickness: { value: 0.0075 },
+    },
+    side: BackSide,
+    depthTest: true,
+    depthWrite: false,
+    vertexShader: `
+      #include <common>
+      #include <skinning_pars_vertex>
+
+      uniform float thickness;
+
+      void main() {
+        #include <skinbase_vertex>
+        #include <begin_vertex>
+        #include <beginnormal_vertex>
+        #include <skinning_vertex>
+        #include <skinnormal_vertex>
+
+        transformed += normalize(objectNormal) * thickness;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(transformed, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 color;
+
+      void main() {
+        gl_FragColor = vec4(color, 1.0);
+      }
+    `,
+  });
+  (outlineMaterial as ShaderMaterial & { skinning: boolean }).skinning = true;
+  const outlines: Array<{ outline: Mesh; parent: Group | null }> = [];
+
+  root.traverse((object) => {
+    const mesh = object as Mesh;
+
+    if (!mesh.isMesh || !mesh.geometry || mesh.userData.maskOverlay) {
+      return;
+    }
+
+    const outline = mesh.clone(false) as Mesh;
+    outline.name = `${mesh.name || "mesh"}_outline`;
+    outline.geometry = mesh.geometry;
+    outline.material = outlineMaterial;
+    outline.position.copy(mesh.position);
+    outline.rotation.copy(mesh.rotation);
+    outline.quaternion.copy(mesh.quaternion);
+    outline.scale.copy(mesh.scale);
+    outline.renderOrder = -1;
+    outline.frustumCulled = false;
+
+    if ((mesh as SkinnedMesh).isSkinnedMesh && (outline as SkinnedMesh).bind) {
+      const skinnedMesh = mesh as SkinnedMesh;
+      const skinnedOutline = outline as SkinnedMesh;
+      skinnedOutline.bind(skinnedMesh.skeleton, skinnedMesh.bindMatrix);
+    }
+
+    outlines.push({ outline, parent: mesh.parent as Group | null });
+  });
+
+  outlines.forEach(({ outline, parent }) => {
+    parent?.add(outline);
+  });
+}
+
+function createBoundMeshCopy(source: Mesh, material: Material, suffix: string) {
+  const overlay = source.clone(false) as Mesh;
+  overlay.name = `${source.name || "mesh"}_${suffix}`;
+  overlay.geometry = source.geometry;
+  overlay.material = material;
+  overlay.position.copy(source.position);
+  overlay.rotation.copy(source.rotation);
+  overlay.quaternion.copy(source.quaternion);
+  overlay.scale.copy(source.scale);
+  overlay.renderOrder = suffix === "emission" ? 3 : 2;
+  overlay.frustumCulled = false;
+  overlay.userData.maskOverlay = true;
+
+  if ((source as SkinnedMesh).isSkinnedMesh && (overlay as SkinnedMesh).bind) {
+    const skinnedSource = source as SkinnedMesh;
+    const skinnedOverlay = overlay as SkinnedMesh;
+    skinnedOverlay.bind(skinnedSource.skeleton, skinnedSource.bindMatrix);
+  }
+
+  return overlay;
+}
+
+function addMaskedMaterialOverlays(root: Group, masks: MaskTextures) {
+  const overlays: Array<{ overlay: Mesh; parent: Group | null }> = [];
+
+  root.traverse((object) => {
+    const mesh = object as Mesh;
+
+    if (!mesh.isMesh || !mesh.geometry || mesh.userData.maskOverlay) {
+      return;
+    }
+
+    const material = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+    const baseMaterial = material as MeshToonMaterial | MeshStandardMaterial | undefined;
+    const map = baseMaterial?.map ?? null;
+    const baseColor = baseMaterial?.color?.clone() ?? new Color(1, 1, 1);
+
+    const metallicMaterial = new MeshStandardMaterial({
+      alphaMap: masks.metallic,
+      alphaTest: 0.5,
+      color: baseColor.clone().lerp(new Color("#f0dcc0"), 0.82),
+      envMapIntensity: 0.42,
+      metalness: 0.58,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+      roughness: 0.64,
+      transparent: false,
+    });
+    metallicMaterial.depthTest = true;
+    metallicMaterial.depthWrite = false;
+    metallicMaterial.toneMapped = true;
+
+    const emissionMaterial = new MeshBasicMaterial({
+      alphaMap: masks.emission,
+      alphaTest: 0.2,
+      blending: AdditiveBlending,
+      color: new Color(1, 1, 1),
+      map,
+      opacity: 0.82,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+      transparent: true,
+    });
+    emissionMaterial.depthTest = true;
+    emissionMaterial.depthWrite = false;
+    emissionMaterial.toneMapped = false;
+
+    overlays.push({
+      overlay: createBoundMeshCopy(mesh, metallicMaterial, "metallic"),
+      parent: mesh.parent as Group | null,
+    });
+    overlays.push({
+      overlay: createBoundMeshCopy(mesh, emissionMaterial, "emission"),
+      parent: mesh.parent as Group | null,
+    });
+  });
+
+  overlays.forEach(({ overlay, parent }) => {
+    parent?.add(overlay);
+  });
+}
+
 function createToonGradient() {
   const canvas = document.createElement("canvas");
   canvas.width = 3;
@@ -43,11 +208,11 @@ function createToonGradient() {
   const context = canvas.getContext("2d");
 
   if (context) {
-    context.fillStyle = "#9a5365";
+    context.fillStyle = "#7f6367";
     context.fillRect(0, 0, 1, 1);
-    context.fillStyle = "#d98a7c";
+    context.fillStyle = "#c99d91";
     context.fillRect(1, 0, 1, 1);
-    context.fillStyle = "#fff1cf";
+    context.fillStyle = "#f5ead7";
     context.fillRect(2, 0, 1, 1);
   }
 
@@ -102,12 +267,12 @@ function normalizeMaterials(root: Group, toon: boolean) {
         writableMaterial.alphaTest = 0;
       }
       writableMaterial.color?.lerp(
-        toon ? new Color(1, 0.74, 0.68) : new Color(0.72, 0.72, 0.72),
-        toon ? 0.16 : 0.06,
+        toon ? new Color(0.82, 0.78, 0.75) : new Color(0.72, 0.72, 0.72),
+        toon ? 0.18 : 0.06,
       );
-      writableMaterial.emissive?.multiplyScalar(0.35);
+      writableMaterial.emissive?.multiplyScalar(0.2);
       if ("envMapIntensity" in writableMaterial) {
-        writableMaterial.envMapIntensity = 0.08;
+        writableMaterial.envMapIntensity = 0.1;
       }
       writableMaterial.toneMapped = true;
       writableMaterial.needsUpdate = true;
@@ -137,6 +302,7 @@ export default function GLBCharacter({
   const loaded = useRef<LoadedState | null>(null);
   const frameCount = useRef(0);
   const loader = useMemo(() => new GLTFLoader(), []);
+  const textureLoader = useMemo(() => new TextureLoader(), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -153,14 +319,21 @@ export default function GLBCharacter({
       });
 
       try {
-        const [modelGltf, animationGltf] = await Promise.all([
+        const [modelGltf, animationGltf, metallicMask, emissionMask] = await Promise.all([
           loader.loadAsync(modelUrl),
           loader.loadAsync(animationUrl),
+          textureLoader.loadAsync("/textures/character_metallic_mask.png"),
+          textureLoader.loadAsync("/textures/character_emission_mask.png"),
         ]);
 
         if (cancelled || !root.current) {
           return;
         }
+
+        metallicMask.flipY = false;
+        metallicMask.needsUpdate = true;
+        emissionMask.flipY = false;
+        emissionMask.needsUpdate = true;
 
         const clip =
           animationGltf.animations.find((item) =>
@@ -175,6 +348,13 @@ export default function GLBCharacter({
           object.frustumCulled = false;
         });
         normalizeMaterials(modelGltf.scene, toon);
+        if (toon) {
+          addMaskedMaterialOverlays(modelGltf.scene, {
+            metallic: metallicMask,
+            emission: emissionMask,
+          });
+          addAnimeOutlines(modelGltf.scene);
+        }
 
         root.current.clear();
         root.current.add(modelGltf.scene);
@@ -218,7 +398,7 @@ export default function GLBCharacter({
       loaded.current = null;
       root.current?.clear();
     };
-  }, [animationUrl, loader, modelUrl, onError, onStatus, toon]);
+  }, [animationUrl, loader, modelUrl, onError, onStatus, textureLoader, toon]);
 
   useEffect(() => {
     if (!loaded.current) {
