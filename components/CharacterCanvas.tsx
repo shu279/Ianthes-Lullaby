@@ -8,6 +8,21 @@ import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import GLBCharacter from "./GLBCharacter";
 import { type AnimationStatus } from "./VRMCharacter";
 
+const animationOptions = [
+  {
+    key: "surprise",
+    label: "Surprise",
+    url: "/animations/surprise.glb?v=20260613-motion-1",
+  },
+  {
+    key: "attack",
+    label: "Attack",
+    url: "/animations/attack.glb?v=20260613-motion-1",
+  },
+] as const;
+
+type AnimationKey = (typeof animationOptions)[number]["key"];
+
 const initialStatus: AnimationStatus = {
   vrmLoaded: false,
   animationLoaded: false,
@@ -69,9 +84,20 @@ export default function CharacterCanvas() {
   const [error, setError] = useState<string | null>(null);
   const [playNonce, setPlayNonce] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [selectedAnimation, setSelectedAnimation] =
+    useState<AnimationKey>("surprise");
+  const animationUrl =
+    animationOptions.find((option) => option.key === selectedAnimation)?.url ??
+    animationOptions[0].url;
 
   const replay = useCallback(() => {
     setPaused(false);
+    setPlayNonce((value) => value + 1);
+  }, []);
+
+  const selectAnimation = useCallback((animation: AnimationKey) => {
+    setPaused(false);
+    setSelectedAnimation(animation);
     setPlayNonce((value) => value + 1);
   }, []);
 
@@ -96,8 +122,8 @@ export default function CharacterCanvas() {
         />
         <Suspense fallback={null}>
           <GLBCharacter
-            modelUrl="/models/character.glb?v=20260612-glb-1"
-            animationUrl="/animations/surprise.glb?v=20260612-glb-1"
+            modelUrl="/models/character.glb?v=20260613-outline-1"
+            animationUrl={animationUrl}
             toon
             playNonce={playNonce}
             paused={paused}
@@ -111,7 +137,7 @@ export default function CharacterCanvas() {
 
       <aside className="hud" aria-live="polite">
         <h1>Ianthe Animation Check</h1>
-        <p>Loads the VRM and plays the Surprise GLB clip against the character.</p>
+        <p>Loads the character GLB and plays selected motion clips.</p>
 
         <dl className="statusList">
           <div className="statusRow">
@@ -150,11 +176,29 @@ export default function CharacterCanvas() {
             <dt>Hips rot</dt>
             <dd>{formatVector(status.hipsRotation)}</dd>
           </div>
+          <div className="statusRow">
+            <dt>Eye close</dt>
+            <dd>
+              {status.eyeCloseDriver
+                ? `${status.eyeCloseDriver.influence.toFixed(3)} / y ${status.eyeCloseDriver.y.toFixed(3)}`
+                : "n/a"}
+            </dd>
+          </div>
         </dl>
 
         <div className="controls">
+          {animationOptions.map((option) => (
+            <button
+              className={selectedAnimation === option.key ? "primary" : undefined}
+              key={option.key}
+              type="button"
+              onClick={() => selectAnimation(option.key)}
+            >
+              {option.label}
+            </button>
+          ))}
           <button className="primary" type="button" onClick={replay}>
-            Replay Surprise
+            Replay
           </button>
           <button
             type="button"

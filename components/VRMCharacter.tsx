@@ -26,6 +26,10 @@ export type AnimationStatus = {
   isPlaying: boolean;
   hipsPosition?: [number, number, number];
   hipsRotation?: [number, number, number, number];
+  eyeCloseDriver?: {
+    influence: number;
+    y: number;
+  };
 };
 
 export type AnimationMode = "normalized" | "rotation" | "rotationWithRoot" | "raw";

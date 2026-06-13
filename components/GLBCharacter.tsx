@@ -7,18 +7,19 @@ import {
   AnimationAction,
   AnimationClip,
   AnimationMixer,
-  BackSide,
   CanvasTexture,
   Color,
+  FrontSide,
   Material,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
   MeshToonMaterial,
   NearestFilter,
+  Object3D,
   Group,
   LoopRepeat,
-  ShaderMaterial,
+  NumberKeyframeTrack,
   SkinnedMesh,
   Texture,
   TextureLoader,
@@ -41,6 +42,7 @@ type LoadedState = {
   action: AnimationAction;
   clip: AnimationClip;
   hips?: Group;
+  morphDrivers: MorphDriver[];
 };
 
 type MaskTextures = {
@@ -48,72 +50,182 @@ type MaskTextures = {
   emission: Texture;
 };
 
-function addAnimeOutlines(root: Group) {
-  const outlineMaterial = new ShaderMaterial({
-    uniforms: {
-      color: { value: new Color("#2b2025") },
-      thickness: { value: 0.0075 },
-    },
-    side: BackSide,
-    depthTest: true,
-    depthWrite: false,
-    vertexShader: `
-      #include <common>
-      #include <skinning_pars_vertex>
+type MorphTargetMesh = Mesh & {
+  morphTargetDictionary?: Record<string, number>;
+  morphTargetInfluences?: number[];
+};
 
-      uniform float thickness;
+type MorphDriver = {
+  control: Object3D;
+  influence: number;
+  meshes: MorphTargetMesh[];
+  range: number;
+  restY: number;
+  targetName: string;
+};
 
-      void main() {
-        #include <skinbase_vertex>
-        #include <begin_vertex>
-        #include <beginnormal_vertex>
-        #include <skinning_vertex>
-        #include <skinnormal_vertex>
+const morphDriverConfigs = [
+  { controlName: "eye.close.L", targetName: "Sleep_L", range: 0.046 },
+  { controlName: "eye.close.R", targetName: "Sleep_R", range: 0.046 },
+  { controlName: "eye.smile.L", targetName: "Smile_L", range: 0.046 },
+  { controlName: "eye.smile.R", targetName: "Smile_R", range: 0.046 },
+];
 
-        transformed += normalize(objectNormal) * thickness;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(transformed, 1.0);
-      }
-    `,
-    fragmentShader: `
-      uniform vec3 color;
+function clamp01(value: number) {
+  return Math.min(1, Math.max(0, value));
+}
 
-      void main() {
-        gl_FragColor = vec4(color, 1.0);
-      }
-    `,
+function sanitizeAnimatedNodeName(name: string) {
+  return name.replace(/\s/g, "_").replace(/[[\].:/]/g, "");
+}
+
+function isOutlineObject(object: Object3D) {
+  return object.name.toLowerCase() === "outline";
+}
+
+function createMorphDrivers(root: Group) {
+  const morphMeshes: MorphTargetMesh[] = [];
+
+  root.traverse((object) => {
+    const mesh = object as MorphTargetMesh;
+
+    if (
+      mesh.isMesh &&
+      !isOutlineObject(mesh) &&
+      mesh.morphTargetDictionary &&
+      mesh.morphTargetInfluences
+    ) {
+      morphMeshes.push(mesh);
+    }
   });
-  (outlineMaterial as ShaderMaterial & { skinning: boolean }).skinning = true;
-  const outlines: Array<{ outline: Mesh; parent: Group | null }> = [];
 
+  return morphDriverConfigs.flatMap((config) => {
+    const control = root.getObjectByName(sanitizeAnimatedNodeName(config.controlName));
+    const meshes = morphMeshes.filter((mesh) =>
+      Object.prototype.hasOwnProperty.call(
+        mesh.morphTargetDictionary,
+        config.targetName,
+      ),
+    );
+
+    if (!control || meshes.length === 0) {
+      return [];
+    }
+
+    return [
+      {
+        control,
+        influence: 0,
+        meshes,
+        range: config.range,
+        restY: control.position.y,
+        targetName: config.targetName,
+      },
+    ];
+  });
+}
+
+function createClipWithMorphDriverTracks(sourceClip: AnimationClip, root: Group) {
+  const morphMeshes: MorphTargetMesh[] = [];
+
+  root.traverse((object) => {
+    const mesh = object as MorphTargetMesh;
+
+    if (
+      mesh.isMesh &&
+      !isOutlineObject(mesh) &&
+      mesh.morphTargetDictionary &&
+      mesh.morphTargetInfluences
+    ) {
+      morphMeshes.push(mesh);
+    }
+  });
+
+  const morphTracks = morphDriverConfigs.flatMap((config) => {
+    const controlName = sanitizeAnimatedNodeName(config.controlName);
+    const control = root.getObjectByName(controlName);
+    const sourceTrack = sourceClip.tracks.find((track) => {
+      const propertySeparator = track.name.lastIndexOf(".");
+      const nodeName = track.name.slice(0, propertySeparator);
+      const propertyName = track.name.slice(propertySeparator + 1);
+
+      return (
+        nodeName === controlName &&
+        (propertyName === "position" || propertyName === "translation") &&
+        track.getValueSize() === 3
+      );
+    });
+
+    if (!control || !sourceTrack) {
+      return [];
+    }
+
+    const targetMeshes = morphMeshes.filter((mesh) =>
+      Object.prototype.hasOwnProperty.call(
+        mesh.morphTargetDictionary,
+        config.targetName,
+      ),
+    );
+
+    return targetMeshes.map((mesh) => {
+      const values: number[] = [];
+
+      for (let index = 0; index < sourceTrack.values.length; index += 3) {
+        const y = sourceTrack.values[index + 1];
+        values.push(clamp01((control.position.y - y) / config.range));
+      }
+
+      return new NumberKeyframeTrack(
+        `${mesh.name}.morphTargetInfluences[${config.targetName}]`,
+        sourceTrack.times.slice(),
+        values,
+      );
+    });
+  });
+
+  if (morphTracks.length === 0) {
+    return sourceClip;
+  }
+
+  return new AnimationClip(sourceClip.name, sourceClip.duration, [
+    ...sourceClip.tracks,
+    ...morphTracks,
+  ]);
+}
+
+function applyMorphDrivers(drivers: MorphDriver[]) {
+  drivers.forEach((driver) => {
+    const influence = clamp01((driver.restY - driver.control.position.y) / driver.range);
+    driver.influence = influence;
+
+    driver.meshes.forEach((mesh) => {
+      const targetIndex = mesh.morphTargetDictionary?.[driver.targetName];
+
+      if (targetIndex === undefined || !mesh.morphTargetInfluences) {
+        return;
+      }
+
+      mesh.morphTargetInfluences[targetIndex] = influence;
+    });
+  });
+}
+
+function configureExportedOutline(root: Group) {
   root.traverse((object) => {
     const mesh = object as Mesh;
 
-    if (!mesh.isMesh || !mesh.geometry || mesh.userData.maskOverlay) {
+    if (!mesh.isMesh || !mesh.geometry || !isOutlineObject(mesh)) {
       return;
     }
 
-    const outline = mesh.clone(false) as Mesh;
-    outline.name = `${mesh.name || "mesh"}_outline`;
-    outline.geometry = mesh.geometry;
-    outline.material = outlineMaterial;
-    outline.position.copy(mesh.position);
-    outline.rotation.copy(mesh.rotation);
-    outline.quaternion.copy(mesh.quaternion);
-    outline.scale.copy(mesh.scale);
-    outline.renderOrder = -1;
-    outline.frustumCulled = false;
-
-    if ((mesh as SkinnedMesh).isSkinnedMesh && (outline as SkinnedMesh).bind) {
-      const skinnedMesh = mesh as SkinnedMesh;
-      const skinnedOutline = outline as SkinnedMesh;
-      skinnedOutline.bind(skinnedMesh.skeleton, skinnedMesh.bindMatrix);
-    }
-
-    outlines.push({ outline, parent: mesh.parent as Group | null });
-  });
-
-  outlines.forEach(({ outline, parent }) => {
-    parent?.add(outline);
+    mesh.material = new MeshBasicMaterial({
+      color: new Color("#2b2025"),
+      side: FrontSide,
+      toneMapped: false,
+    });
+    mesh.renderOrder = -1;
+    mesh.frustumCulled = false;
+    mesh.userData.exportedOutline = true;
   });
 }
 
@@ -145,7 +257,12 @@ function addMaskedMaterialOverlays(root: Group, masks: MaskTextures) {
   root.traverse((object) => {
     const mesh = object as Mesh;
 
-    if (!mesh.isMesh || !mesh.geometry || mesh.userData.maskOverlay) {
+    if (
+      !mesh.isMesh ||
+      !mesh.geometry ||
+      mesh.userData.maskOverlay ||
+      isOutlineObject(mesh)
+    ) {
       return;
     }
 
@@ -230,7 +347,7 @@ function normalizeMaterials(root: Group, toon: boolean) {
     const mesh = object as Mesh;
     const material = mesh.material;
 
-    if (!material) {
+    if (!material || isOutlineObject(mesh)) {
       return;
     }
 
@@ -335,12 +452,12 @@ export default function GLBCharacter({
         emissionMask.flipY = false;
         emissionMask.needsUpdate = true;
 
-        const clip =
+        const sourceClip =
           animationGltf.animations.find((item) =>
             item.name.toLowerCase().includes("surprise"),
           ) ?? animationGltf.animations[0];
 
-        if (!clip) {
+        if (!sourceClip) {
           throw new Error("No animation clips were found in surprise.glb.");
         }
 
@@ -353,12 +470,13 @@ export default function GLBCharacter({
             metallic: metallicMask,
             emission: emissionMask,
           });
-          addAnimeOutlines(modelGltf.scene);
+          configureExportedOutline(modelGltf.scene);
         }
 
         root.current.clear();
         root.current.add(modelGltf.scene);
 
+        const clip = createClipWithMorphDriverTracks(sourceClip, modelGltf.scene);
         const mixer = new AnimationMixer(modelGltf.scene);
         const action = mixer.clipAction(clip);
         action.loop = LoopRepeat;
@@ -366,7 +484,9 @@ export default function GLBCharacter({
         action.reset().fadeIn(0.12).play();
 
         const hips = modelGltf.scene.getObjectByName("Hips") as Group | undefined;
-        loaded.current = { mixer, action, clip, hips };
+        const morphDrivers = createMorphDrivers(modelGltf.scene);
+        applyMorphDrivers(morphDrivers);
+        loaded.current = { mixer, action, clip, hips, morphDrivers };
         onStatus({
           vrmLoaded: true,
           animationLoaded: true,
@@ -427,13 +547,18 @@ export default function GLBCharacter({
     }
 
     loaded.current.mixer.update(delta);
+    applyMorphDrivers(loaded.current.morphDrivers);
 
     frameCount.current += 1;
     if (frameCount.current % 12 !== 0) {
       return;
     }
 
-    const { clip, hips } = loaded.current;
+    const { clip, hips, morphDrivers } = loaded.current;
+    const eyeCloseDriver = morphDrivers.find(
+      (driver) => driver.targetName === "Sleep_L",
+    );
+
     onStatus({
       vrmLoaded: true,
       animationLoaded: true,
@@ -451,6 +576,12 @@ export default function GLBCharacter({
             hips.quaternion.z,
             hips.quaternion.w,
           ]
+        : undefined,
+      eyeCloseDriver: eyeCloseDriver
+        ? {
+            influence: eyeCloseDriver.influence,
+            y: eyeCloseDriver.control.position.y,
+          }
         : undefined,
     });
   });
