@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Environment, OrbitControls } from "@react-three/drei";
 import { ACESFilmicToneMapping } from "three";
@@ -10,14 +10,44 @@ import { type AnimationStatus } from "./VRMCharacter";
 
 const animationOptions = [
   {
+    key: "intro",
+    label: "Intro",
+    url: "/animations/intro.glb?v=20260614-flow-1",
+  },
+  {
+    key: "idle",
+    label: "Idle",
+    url: "/animations/idle.glb?v=20260614-flow-1",
+  },
+  {
+    key: "pose",
+    label: "Pose",
+    url: "/animations/pose.glb?v=20260614-flow-1",
+  },
+  {
     key: "surprise",
     label: "Surprise",
-    url: "/animations/surprise.glb?v=20260613-motion-1",
+    url: "/animations/surprise.glb?v=20260614-flow-1",
   },
   {
     key: "attack",
     label: "Attack",
-    url: "/animations/attack.glb?v=20260613-motion-1",
+    url: "/animations/attack.glb?v=20260614-flow-1",
+  },
+  {
+    key: "laugh",
+    label: "Laugh",
+    url: "/animations/laugh.glb?v=20260614-flow-1",
+  },
+  {
+    key: "sleepIn",
+    label: "Sleep In",
+    url: "/animations/sleep_in.glb?v=20260614-flow-1",
+  },
+  {
+    key: "sleepOut",
+    label: "Sleep Out",
+    url: "/animations/sleep_out.glb?v=20260614-flow-1",
   },
 ] as const;
 
@@ -85,10 +115,11 @@ export default function CharacterCanvas() {
   const [playNonce, setPlayNonce] = useState(0);
   const [paused, setPaused] = useState(false);
   const [selectedAnimation, setSelectedAnimation] =
-    useState<AnimationKey>("surprise");
+    useState<AnimationKey>("intro");
   const animationUrl =
     animationOptions.find((option) => option.key === selectedAnimation)?.url ??
     animationOptions[0].url;
+  const shouldLoopAnimation = selectedAnimation === "idle";
 
   const replay = useCallback(() => {
     setPaused(false);
@@ -100,6 +131,24 @@ export default function CharacterCanvas() {
     setSelectedAnimation(animation);
     setPlayNonce((value) => value + 1);
   }, []);
+
+  useEffect(() => {
+    if (
+      selectedAnimation !== "intro" ||
+      paused ||
+      !status.animationLoaded ||
+      status.clipDuration <= 0
+    ) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setSelectedAnimation("idle");
+      setPlayNonce((value) => value + 1);
+    }, status.clipDuration * 1000);
+
+    return () => window.clearTimeout(timeout);
+  }, [paused, selectedAnimation, status.animationLoaded, status.clipDuration]);
 
   return (
     <div className="canvasWrap">
@@ -124,6 +173,7 @@ export default function CharacterCanvas() {
           <GLBCharacter
             modelUrl="/models/character.glb?v=20260613-outline-1"
             animationUrl={animationUrl}
+            loop={shouldLoopAnimation}
             toon
             playNonce={playNonce}
             paused={paused}
