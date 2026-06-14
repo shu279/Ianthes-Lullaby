@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import {
   AdditiveBlending,
@@ -18,6 +18,7 @@ import {
   NearestFilter,
   Object3D,
   Group,
+  LoopOnce,
   LoopRepeat,
   NumberKeyframeTrack,
   SkinnedMesh,
@@ -30,6 +31,7 @@ import type { AnimationStatus } from "./VRMCharacter";
 type GLBCharacterProps = {
   modelUrl: string;
   animationUrl: string;
+  loop: boolean;
   toon: boolean;
   playNonce: number;
   paused: boolean;
@@ -39,10 +41,11 @@ type GLBCharacterProps = {
 
 type LoadedState = {
   mixer: AnimationMixer;
-  action: AnimationAction;
-  clip: AnimationClip;
+  action?: AnimationAction;
+  clip?: AnimationClip;
   hips?: Group;
   morphDrivers: MorphDriver[];
+  scene: Group;
 };
 
 type MaskTextures = {
@@ -64,11 +67,16 @@ type MorphDriver = {
   targetName: string;
 };
 
+type ColorMappedMaterial = Material & {
+  color?: Color;
+  map?: Texture | null;
+};
+
 const morphDriverConfigs = [
-  { controlName: "eye.close.L", targetName: "Sleep_L", range: 0.046 },
-  { controlName: "eye.close.R", targetName: "Sleep_R", range: 0.046 },
-  { controlName: "eye.smile.L", targetName: "Smile_L", range: 0.046 },
-  { controlName: "eye.smile.R", targetName: "Smile_R", range: 0.046 },
+  { controlName: "eye.close.L", targetName: "Sleep_L", range: 0.014 },
+  { controlName: "eye.close.R", targetName: "Sleep_R", range: 0.014 },
+  { controlName: "eye.smile.L", targetName: "Smile_L", range: 0.014 },
+  { controlName: "eye.smile.R", targetName: "Smile_R", range: 0.014 },
 ];
 
 function clamp01(value: number) {
@@ -81,6 +89,27 @@ function sanitizeAnimatedNodeName(name: string) {
 
 function isOutlineObject(object: Object3D) {
   return object.name.toLowerCase() === "outline";
+}
+
+function getPrimaryCharacterMaterial(root: Group): ColorMappedMaterial | null {
+  let primaryMaterial: ColorMappedMaterial | null = null;
+
+  root.traverse((object) => {
+    if (primaryMaterial) {
+      return;
+    }
+
+    const mesh = object as Mesh;
+
+    if (!mesh.isMesh || isOutlineObject(mesh)) {
+      return;
+    }
+
+    const material = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+    primaryMaterial = material as ColorMappedMaterial;
+  });
+
+  return primaryMaterial;
 }
 
 function createMorphDrivers(root: Group) {
@@ -211,6 +240,11 @@ function applyMorphDrivers(drivers: MorphDriver[]) {
 }
 
 function configureExportedOutline(root: Group) {
+  const primaryMaterial = getPrimaryCharacterMaterial(root);
+  const outlineBaseColor =
+    primaryMaterial?.color?.clone().multiplyScalar(0.42) ?? new Color("#2b2025");
+  const outlineMap = primaryMaterial?.map ?? null;
+
   root.traverse((object) => {
     const mesh = object as Mesh;
 
@@ -219,7 +253,8 @@ function configureExportedOutline(root: Group) {
     }
 
     mesh.material = new MeshBasicMaterial({
-      color: new Color("#2b2025"),
+      color: outlineBaseColor,
+      map: outlineMap,
       side: FrontSide,
       toneMapped: false,
     });
@@ -409,6 +444,7 @@ function normalizeMaterials(root: Group, toon: boolean) {
 export default function GLBCharacter({
   modelUrl,
   animationUrl,
+  loop,
   toon,
   playNonce,
   paused,
@@ -420,11 +456,12 @@ export default function GLBCharacter({
   const frameCount = useRef(0);
   const loader = useMemo(() => new GLTFLoader(), []);
   const textureLoader = useMemo(() => new TextureLoader(), []);
+  const [modelVersion, setModelVersion] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
 
-    async function loadCharacterAndAnimation() {
+    async function loadCharacter() {
       onError(null);
       onStatus({
         vrmLoaded: false,
@@ -436,9 +473,8 @@ export default function GLBCharacter({
       });
 
       try {
-        const [modelGltf, animationGltf, metallicMask, emissionMask] = await Promise.all([
+        const [modelGltf, metallicMask, emissionMask] = await Promise.all([
           loader.loadAsync(modelUrl),
-          loader.loadAsync(animationUrl),
           textureLoader.loadAsync("/textures/character_metallic_mask.png"),
           textureLoader.loadAsync("/textures/character_emission_mask.png"),
         ]);
@@ -451,15 +487,6 @@ export default function GLBCharacter({
         metallicMask.needsUpdate = true;
         emissionMask.flipY = false;
         emissionMask.needsUpdate = true;
-
-        const sourceClip =
-          animationGltf.animations.find((item) =>
-            item.name.toLowerCase().includes("surprise"),
-          ) ?? animationGltf.animations[0];
-
-        if (!sourceClip) {
-          throw new Error("No animation clips were found in surprise.glb.");
-        }
 
         modelGltf.scene.traverse((object) => {
           object.frustumCulled = false;
@@ -476,28 +503,28 @@ export default function GLBCharacter({
         root.current.clear();
         root.current.add(modelGltf.scene);
 
-        const clip = createClipWithMorphDriverTracks(sourceClip, modelGltf.scene);
         const mixer = new AnimationMixer(modelGltf.scene);
-        const action = mixer.clipAction(clip);
-        action.loop = LoopRepeat;
-        action.clampWhenFinished = false;
-        action.reset().fadeIn(0.12).play();
-
         const hips = modelGltf.scene.getObjectByName("Hips") as Group | undefined;
         const morphDrivers = createMorphDrivers(modelGltf.scene);
         applyMorphDrivers(morphDrivers);
-        loaded.current = { mixer, action, clip, hips, morphDrivers };
+        loaded.current = {
+          mixer,
+          hips,
+          morphDrivers,
+          scene: modelGltf.scene,
+        };
+        setModelVersion((value) => value + 1);
         onStatus({
           vrmLoaded: true,
-          animationLoaded: true,
-          clipName: clip.name || "(unnamed clip)",
-          clipDuration: clip.duration,
-          trackCount: clip.tracks.length,
-          isPlaying: true,
+          animationLoaded: false,
+          clipName: "not loaded",
+          clipDuration: 0,
+          trackCount: 0,
+          isPlaying: false,
         });
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : "Failed to load GLB viewer assets.";
+          error instanceof Error ? error.message : "Failed to load character assets.";
         onError(message);
         onStatus({
           vrmLoaded: false,
@@ -510,7 +537,7 @@ export default function GLBCharacter({
       }
     }
 
-    void loadCharacterAndAnimation();
+    void loadCharacter();
 
     return () => {
       cancelled = true;
@@ -518,18 +545,102 @@ export default function GLBCharacter({
       loaded.current = null;
       root.current?.clear();
     };
-  }, [animationUrl, loader, modelUrl, onError, onStatus, textureLoader, toon]);
+  }, [loader, modelUrl, onError, onStatus, textureLoader, toon]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAnimation() {
+      const current = loaded.current;
+
+      if (!current) {
+        return;
+      }
+
+      onError(null);
+      onStatus({
+        vrmLoaded: true,
+        animationLoaded: false,
+        clipName: "loading",
+        clipDuration: 0,
+        trackCount: 0,
+        isPlaying: false,
+      });
+
+      try {
+        const animationGltf = await loader.loadAsync(animationUrl);
+
+        if (cancelled || loaded.current !== current) {
+          return;
+        }
+
+        const sourceClip = animationGltf.animations[0];
+
+        if (!sourceClip) {
+          throw new Error("No animation clips were found in the selected GLB.");
+        }
+
+        const clip = createClipWithMorphDriverTracks(sourceClip, current.scene);
+        const previousAction = current.action;
+        const action = current.mixer.clipAction(clip);
+        action.loop = loop ? LoopRepeat : LoopOnce;
+        action.clampWhenFinished = !loop;
+        action.reset().setEffectiveWeight(1).setEffectiveTimeScale(1).play();
+
+        if (previousAction && previousAction !== action) {
+          previousAction.fadeOut(0.12);
+          action.fadeIn(0.12);
+        }
+
+        current.action = action;
+        current.clip = clip;
+        applyMorphDrivers(current.morphDrivers);
+        onStatus({
+          vrmLoaded: true,
+          animationLoaded: true,
+          clipName: clip.name || "(unnamed clip)",
+          clipDuration: clip.duration,
+          trackCount: clip.tracks.length,
+          isPlaying: true,
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to load animation asset.";
+        onError(message);
+        onStatus({
+          vrmLoaded: true,
+          animationLoaded: false,
+          clipName: "load failed",
+          clipDuration: 0,
+          trackCount: 0,
+          isPlaying: false,
+        });
+      }
+    }
+
+    void loadAnimation();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [animationUrl, loader, loop, modelVersion, onError, onStatus]);
 
   useEffect(() => {
     if (!loaded.current) {
       return;
     }
 
-    loaded.current.action.paused = paused;
+    if (loaded.current.action) {
+      loaded.current.action.paused = paused;
+    }
   }, [paused]);
 
   useEffect(() => {
     if (!loaded.current) {
+      return;
+    }
+
+    if (!loaded.current.action) {
       return;
     }
 
@@ -561,11 +672,11 @@ export default function GLBCharacter({
 
     onStatus({
       vrmLoaded: true,
-      animationLoaded: true,
-      clipName: clip.name || "(unnamed clip)",
-      clipDuration: clip.duration,
-      trackCount: clip.tracks.length,
-      isPlaying: true,
+      animationLoaded: Boolean(clip),
+      clipName: clip?.name || "loading",
+      clipDuration: clip?.duration ?? 0,
+      trackCount: clip?.tracks.length ?? 0,
+      isPlaying: Boolean(clip),
       hipsPosition: hips
         ? [hips.position.x, hips.position.y, hips.position.z]
         : undefined,
