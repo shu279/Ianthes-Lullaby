@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useFrame } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import {
   AdditiveBlending,
   AnimationAction,
@@ -21,9 +21,12 @@ import {
   LoopOnce,
   LoopRepeat,
   NumberKeyframeTrack,
+  Quaternion,
   SkinnedMesh,
   Texture,
   TextureLoader,
+  Euler,
+  Vector3,
 } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import type { AnimationStatus } from "./VRMCharacter";
@@ -43,6 +46,7 @@ type LoadedState = {
   mixer: AnimationMixer;
   action?: AnimationAction;
   clip?: AnimationClip;
+  eyeLookBones: EyeLookBone[];
   hips?: Group;
   morphDrivers: MorphDriver[];
   scene: Group;
@@ -67,6 +71,11 @@ type MorphDriver = {
   targetName: string;
 };
 
+type EyeLookBone = {
+  bone: Object3D;
+  restQuaternion: Quaternion;
+};
+
 type ColorMappedMaterial = Material & {
   color?: Color;
   map?: Texture | null;
@@ -78,6 +87,20 @@ const morphDriverConfigs = [
   { controlName: "eye.smile.L", targetName: "Smile_L", range: 0.014 },
   { controlName: "eye.smile.R", targetName: "Smile_R", range: 0.014 },
 ];
+const eyeLookBoneNames = ["Eye.L", "Eye.R"];
+const maxEyeLookAngle = Math.PI * 0.46;
+const maxEyeYaw = 0.16;
+const maxEyePitch = 0.11;
+const eyeYawScale = 0.28;
+const eyePitchScale = 0.22;
+const eyeLookSmoothing = 0.28;
+
+const reusableCameraPosition = new Vector3();
+const reusableLocalCameraPosition = new Vector3();
+const reusableEyeDirection = new Vector3();
+const reusableEyeRotation = new Quaternion();
+const reusableEyeOffsetRotation = new Quaternion();
+const reusableEyeOffsetEuler = new Euler(0, 0, 0, "XYZ");
 
 function clamp01(value: number) {
   return Math.min(1, Math.max(0, value));
@@ -85,6 +108,28 @@ function clamp01(value: number) {
 
 function sanitizeAnimatedNodeName(name: string) {
   return name.replace(/\s/g, "_").replace(/[[\].:/]/g, "");
+}
+
+function getObjectByPossibleNames(root: Object3D, name: string) {
+  return (
+    root.getObjectByName(name) ??
+    root.getObjectByName(sanitizeAnimatedNodeName(name))
+  );
+}
+
+function getTrackNodeName(trackName: string) {
+  const propertySeparator = trackName.lastIndexOf(".");
+  return propertySeparator === -1
+    ? trackName
+    : trackName.slice(0, propertySeparator);
+}
+
+function isEyeLookTrack(trackName: string) {
+  const nodeName = getTrackNodeName(trackName);
+
+  return eyeLookBoneNames.some(
+    (name) => nodeName === name || nodeName === sanitizeAnimatedNodeName(name),
+  );
 }
 
 function isOutlineObject(object: Object3D) {
@@ -129,7 +174,7 @@ function createMorphDrivers(root: Group) {
   });
 
   return morphDriverConfigs.flatMap((config) => {
-    const control = root.getObjectByName(sanitizeAnimatedNodeName(config.controlName));
+    const control = getObjectByPossibleNames(root, config.controlName);
     const meshes = morphMeshes.filter((mesh) =>
       Object.prototype.hasOwnProperty.call(
         mesh.morphTargetDictionary,
@@ -151,6 +196,83 @@ function createMorphDrivers(root: Group) {
         targetName: config.targetName,
       },
     ];
+  });
+}
+
+function createEyeLookBones(root: Group): EyeLookBone[] {
+  return eyeLookBoneNames.flatMap((name) => {
+    const bone = getObjectByPossibleNames(root, name);
+
+    if (!bone) {
+      return [];
+    }
+
+    return [
+      {
+        bone,
+        restQuaternion: bone.quaternion.clone(),
+      },
+    ];
+  });
+}
+
+function updateEyeLookBones({
+  cameraPosition,
+  delta,
+  eyeLookBones,
+}: {
+  cameraPosition: Vector3;
+  delta: number;
+  eyeLookBones: EyeLookBone[];
+}) {
+  if (eyeLookBones.length === 0) {
+    return;
+  }
+
+  const blend = 1 - Math.pow(1 - eyeLookSmoothing, Math.max(1, delta * 60));
+
+  eyeLookBones.forEach((eyeLook) => {
+    const parent = eyeLook.bone.parent;
+
+    if (!parent) {
+      return;
+    }
+
+    parent.updateWorldMatrix(true, false);
+    reusableLocalCameraPosition.copy(cameraPosition);
+    parent.worldToLocal(reusableLocalCameraPosition);
+    reusableEyeDirection
+      .copy(reusableLocalCameraPosition)
+      .sub(eyeLook.bone.position);
+
+    const horizontal = reusableEyeDirection.x;
+    const frontDepth = Math.abs(reusableEyeDirection.z);
+    const vertical = reusableEyeDirection.y;
+    const offCenterDistance = Math.hypot(horizontal, vertical);
+    const frontAngle = Math.atan2(
+      offCenterDistance,
+      Math.max(0.001, frontDepth),
+    );
+    const isNearFront = frontDepth > 0.001 && frontAngle < maxEyeLookAngle;
+    const yaw = isNearFront
+      ? Math.max(
+          -maxEyeYaw,
+          Math.min(maxEyeYaw, -(horizontal / frontDepth) * eyeYawScale),
+        )
+      : 0;
+    const pitch = isNearFront
+      ? Math.max(
+          -maxEyePitch,
+          Math.min(maxEyePitch, (vertical / frontDepth) * eyePitchScale),
+        )
+      : 0;
+
+    reusableEyeOffsetEuler.set(pitch, 0, yaw);
+    reusableEyeOffsetRotation.setFromEuler(reusableEyeOffsetEuler);
+    reusableEyeRotation
+      .copy(eyeLook.restQuaternion)
+      .multiply(reusableEyeOffsetRotation);
+    eyeLook.bone.quaternion.slerp(reusableEyeRotation, blend);
   });
 }
 
@@ -212,12 +334,8 @@ function createClipWithMorphDriverTracks(sourceClip: AnimationClip, root: Group)
     });
   });
 
-  if (morphTracks.length === 0) {
-    return sourceClip;
-  }
-
   return new AnimationClip(sourceClip.name, sourceClip.duration, [
-    ...sourceClip.tracks,
+    ...sourceClip.tracks.filter((track) => !isEyeLookTrack(track.name)),
     ...morphTracks,
   ]);
 }
@@ -451,6 +569,7 @@ export default function GLBCharacter({
   onStatus,
   onError,
 }: GLBCharacterProps) {
+  const camera = useThree((state) => state.camera);
   const root = useRef<Group>(null);
   const loaded = useRef<LoadedState | null>(null);
   const frameCount = useRef(0);
@@ -491,6 +610,7 @@ export default function GLBCharacter({
         modelGltf.scene.traverse((object) => {
           object.frustumCulled = false;
         });
+        modelGltf.scene.visible = false;
         normalizeMaterials(modelGltf.scene, toon);
         if (toon) {
           addMaskedMaterialOverlays(modelGltf.scene, {
@@ -504,11 +624,13 @@ export default function GLBCharacter({
         root.current.add(modelGltf.scene);
 
         const mixer = new AnimationMixer(modelGltf.scene);
+        const eyeLookBones = createEyeLookBones(modelGltf.scene);
         const hips = modelGltf.scene.getObjectByName("Hips") as Group | undefined;
         const morphDrivers = createMorphDrivers(modelGltf.scene);
         applyMorphDrivers(morphDrivers);
         loaded.current = {
           mixer,
+          eyeLookBones,
           hips,
           morphDrivers,
           scene: modelGltf.scene,
@@ -586,6 +708,8 @@ export default function GLBCharacter({
         action.loop = loop ? LoopRepeat : LoopOnce;
         action.clampWhenFinished = !loop;
         action.reset().setEffectiveWeight(1).setEffectiveTimeScale(1).play();
+        current.mixer.update(0);
+        current.scene.visible = true;
 
         if (previousAction && previousAction !== action) {
           previousAction.fadeOut(0.12);
@@ -658,6 +782,11 @@ export default function GLBCharacter({
     }
 
     loaded.current.mixer.update(delta);
+    updateEyeLookBones({
+      cameraPosition: reusableCameraPosition.setFromMatrixPosition(camera.matrixWorld),
+      delta,
+      eyeLookBones: loaded.current.eyeLookBones,
+    });
     applyMorphDrivers(loaded.current.morphDrivers);
 
     frameCount.current += 1;

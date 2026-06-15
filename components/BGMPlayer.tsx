@@ -8,6 +8,7 @@ const tracks = [
   "/music/bgm3.mp3",
   "/music/bgm4.mp3",
 ];
+const normalVolume = 0.55;
 
 function getNextDelayMs() {
   return (5 + Math.random() * 15) * 1000;
@@ -39,7 +40,7 @@ export default function BGMPlayer() {
       trackIndex.current = index;
       currentAudio.src = tracks[index];
       currentAudio.currentTime = 0;
-      currentAudio.volume = 0.55;
+      currentAudio.volume = normalVolume;
 
       try {
         await currentAudio.play();

@@ -36,6 +36,8 @@ import GLBCharacter from "./GLBCharacter";
 import { type AnimationStatus } from "./VRMCharacter";
 
 const OCEAN_LAYER = 1;
+const sleepIdleMs = 30_000;
+const introCameraDuration = 3.4;
 
 const animationOptions = [
   {
@@ -81,6 +83,7 @@ const animationOptions = [
 ] as const;
 
 type AnimationKey = (typeof animationOptions)[number]["key"];
+type SleepMode = "awake" | "entering" | "asleep" | "waking";
 
 const initialStatus: AnimationStatus = {
   vrmLoaded: false,
@@ -137,6 +140,39 @@ function LimitedOrbitControls() {
       maxDistance={6}
     />
   );
+}
+
+function IntroCameraDolly() {
+  const camera = useThree((state) => state.camera);
+  const startTime = useRef<number | null>(null);
+  const done = useRef(false);
+
+  useFrame(({ clock }) => {
+    if (done.current) {
+      return;
+    }
+
+    if (startTime.current === null) {
+      startTime.current = clock.elapsedTime;
+    }
+
+    const progress = Math.min(
+      1,
+      (clock.elapsedTime - startTime.current) / introCameraDuration,
+    );
+    const eased = 1 - Math.pow(1 - progress, 3);
+
+    camera.position.y = eased;
+    camera.position.z = eased * 5.5;
+
+    if (progress >= 1) {
+      camera.position.y = 1;
+      camera.position.z = 5.5;
+      done.current = true;
+    }
+  });
+
+  return null;
 }
 
 function SceneLayerSetup() {
@@ -245,9 +281,9 @@ function BackgroundModel() {
   return (
     <primitive
       object={scene}
-      position={[0, 0, 0]}
+      position={[0, -0.2, 0]}
       rotation={[0, 0, 0]}
-      scale={0.5}
+      scale={0.3}
     />
   );
 }
@@ -443,12 +479,14 @@ function OceanPlane() {
 
 export default function CharacterCanvas() {
   const directionalLight = useRef<ThreeDirectionalLight>(null);
+  const sleepTimer = useRef<number | null>(null);
   const [status, setStatus] = useState<AnimationStatus>(initialStatus);
   const [error, setError] = useState<string | null>(null);
   const [playNonce, setPlayNonce] = useState(0);
   const [paused, setPaused] = useState(false);
   const [selectedAnimation, setSelectedAnimation] =
     useState<AnimationKey>("intro");
+  const [sleepMode, setSleepMode] = useState<SleepMode>("awake");
   const animationUrl =
     animationOptions.find((option) => option.key === selectedAnimation)?.url ??
     animationOptions[0].url;
@@ -464,6 +502,30 @@ export default function CharacterCanvas() {
     setSelectedAnimation(animation);
     setPlayNonce((value) => value + 1);
   }, []);
+
+  const clearSleepTimer = useCallback(() => {
+    if (sleepTimer.current !== null) {
+      window.clearTimeout(sleepTimer.current);
+      sleepTimer.current = null;
+    }
+  }, []);
+
+  const enterSleepMode = useCallback(() => {
+    clearSleepTimer();
+    setSleepMode("entering");
+    selectAnimation("sleepIn");
+  }, [clearSleepTimer, selectAnimation]);
+
+  const armSleepTimer = useCallback(() => {
+    clearSleepTimer();
+    sleepTimer.current = window.setTimeout(enterSleepMode, sleepIdleMs);
+  }, [clearSleepTimer, enterSleepMode]);
+
+  const wakeFromSleepMode = useCallback(() => {
+    clearSleepTimer();
+    setSleepMode("waking");
+    selectAnimation("sleepOut");
+  }, [clearSleepTimer, selectAnimation]);
 
   useEffect(() => {
     if (
@@ -483,10 +545,87 @@ export default function CharacterCanvas() {
     return () => window.clearTimeout(timeout);
   }, [paused, selectedAnimation, status.animationLoaded, status.clipDuration]);
 
+  useEffect(() => {
+    if (
+      selectedAnimation !== "sleepIn" ||
+      sleepMode !== "entering" ||
+      !status.animationLoaded ||
+      status.clipDuration <= 0
+    ) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setSleepMode("asleep");
+    }, status.clipDuration * 1000);
+
+    return () => window.clearTimeout(timeout);
+  }, [selectedAnimation, sleepMode, status.animationLoaded, status.clipDuration]);
+
+  useEffect(() => {
+    if (
+      selectedAnimation !== "sleepOut" ||
+      sleepMode !== "waking" ||
+      !status.animationLoaded ||
+      status.clipDuration <= 0
+    ) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setSleepMode("awake");
+      selectAnimation("idle");
+      armSleepTimer();
+    }, Math.max(0, status.clipDuration * 1000 - 120));
+
+    return () => window.clearTimeout(timeout);
+  }, [
+    armSleepTimer,
+    selectAnimation,
+    selectedAnimation,
+    sleepMode,
+    status.animationLoaded,
+    status.clipDuration,
+  ]);
+
+  useEffect(() => {
+    function handleInteraction(event: Event) {
+      if (event.type === "keydown" && (event as KeyboardEvent).repeat) {
+        return;
+      }
+
+      if (sleepMode === "entering" || sleepMode === "asleep") {
+        wakeFromSleepMode();
+        return;
+      }
+
+      if (sleepMode === "awake") {
+        armSleepTimer();
+      }
+    }
+
+    if (sleepMode === "awake") {
+      armSleepTimer();
+    } else {
+      clearSleepTimer();
+    }
+
+    window.addEventListener("pointerdown", handleInteraction);
+    window.addEventListener("keydown", handleInteraction);
+    window.addEventListener("touchstart", handleInteraction);
+
+    return () => {
+      clearSleepTimer();
+      window.removeEventListener("pointerdown", handleInteraction);
+      window.removeEventListener("keydown", handleInteraction);
+      window.removeEventListener("touchstart", handleInteraction);
+    };
+  }, [armSleepTimer, clearSleepTimer, sleepMode, wakeFromSleepMode]);
+
   return (
     <div className="canvasWrap">
       <Canvas
-        camera={{ position: [0, 0.5, 4.5], fov: 32 }}
+        camera={{ position: [0, 0, 0], fov: 32 }}
         dpr={[1, 2]}
         shadows
         gl={{
@@ -524,6 +663,7 @@ export default function CharacterCanvas() {
           />
           <Environment preset="night" environmentIntensity={0.16} />
         </Suspense>
+        <IntroCameraDolly />
         <LimitedOrbitControls />
       </Canvas>
 
