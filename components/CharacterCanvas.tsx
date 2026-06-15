@@ -196,7 +196,7 @@ function ReflectionLightMask({
 
 function SkyGradient() {
   return (
-    <mesh>
+    <mesh renderOrder={-1000}>
       <sphereGeometry args={[24, 24, 12]} />
       <shaderMaterial
         side={BackSide}
@@ -294,7 +294,7 @@ function StarParticles() {
       colors[index * 3] = color[0];
       colors[index * 3 + 1] = color[1];
       colors[index * 3 + 2] = color[2];
-      sizes[index] = 100 + ((index * 60) % 100) / 100 * 100;
+      sizes[index] = 100 + ((index * 60) % 100) / 100 * 150;
       phases[index] = ((index * 53) % 1000) / 1000 * Math.PI * 2;
       speeds[index] = 0.18 + ((index * 29) % 100) / 100 * 0.34;
       driftRadii[index] = 0.35 + ((index * 43) % 100) / 100 * 0.5;
@@ -425,16 +425,16 @@ function OceanPlane() {
       <circleGeometry args={[15, 96]} />
       <MeshReflectorMaterial
         blur={[120, 48]}
-        color="#7d5aa8"
+        color="#a986cc"
         depthScale={0}
         envMapIntensity={0}
         metalness={0}
-        mirror={0.6}
-        mixBlur={0.3}
+        mirror={0.8}
+        mixBlur={0}
         mixContrast={0.9}
         mixStrength={1}
         reflectorOffset={0.02}
-        resolution={16}
+        resolution={128}
         roughness={0.62}
       />
     </mesh>
@@ -486,7 +486,7 @@ export default function CharacterCanvas() {
   return (
     <div className="canvasWrap">
       <Canvas
-        camera={{ position: [0, 1.35, 3.2], fov: 32 }}
+        camera={{ position: [0, 0.5, 4.5], fov: 32 }}
         dpr={[1, 2]}
         shadows
         gl={{
