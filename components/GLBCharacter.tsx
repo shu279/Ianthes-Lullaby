@@ -707,13 +707,18 @@ export default function GLBCharacter({
         const action = current.mixer.clipAction(clip);
         action.loop = loop ? LoopRepeat : LoopOnce;
         action.clampWhenFinished = !loop;
-        action.reset().setEffectiveWeight(1).setEffectiveTimeScale(1).play();
-        current.mixer.update(0);
-        current.scene.visible = true;
 
         if (previousAction && previousAction !== action) {
-          previousAction.fadeOut(0.12);
-          action.fadeIn(0.12);
+          action
+            .reset()
+            .setEffectiveWeight(1)
+            .setEffectiveTimeScale(1)
+            .play()
+            .crossFadeFrom(previousAction, 0.18, false);
+        } else {
+          action.reset().setEffectiveWeight(1).setEffectiveTimeScale(1).play();
+          current.mixer.update(0);
+          current.scene.visible = true;
         }
 
         current.action = action;

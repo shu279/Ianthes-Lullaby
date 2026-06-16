@@ -153,6 +153,131 @@ button {
   color: #ffb2a8;
 }
 
+.conversationPanel {
+  position: absolute;
+  inset: auto 0 0;
+  width: 100%;
+  min-width: 0;
+  padding: 64px max(24px, calc((100vw - 960px) / 2)) 24px;
+  background: linear-gradient(
+    to top,
+    rgba(7, 9, 18, 0.82) 0%,
+    rgba(7, 9, 18, 0.52) 46%,
+    rgba(7, 9, 18, 0) 100%
+  );
+  pointer-events: none;
+}
+
+.choiceList button {
+  min-height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+}
+
+.conversationReply {
+  margin: 0 auto;
+  width: min(960px, 100%);
+  padding: 0;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.55;
+  text-align: center;
+  pointer-events: auto;
+}
+
+.choiceList {
+  display: flex;
+  flex-wrap: wrap;
+  width: min(960px, 100%);
+  gap: 8px;
+  margin: 14px auto 0;
+  pointer-events: auto;
+}
+
+.choiceList button {
+  flex: 1 1 140px;
+  padding: 9px 12px;
+  text-align: center;
+}
+
+.choiceList button:hover {
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.settingsDock {
+  position: absolute;
+  inset: auto auto 24px 24px;
+  width: min(320px, calc(100vw - 32px));
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+.settingsToggle {
+  min-height: 38px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 0 14px;
+  color: var(--text);
+  background: rgba(31, 30, 42, 0.86);
+  backdrop-filter: blur(14px);
+  cursor: pointer;
+}
+
+.settingsToggle:hover {
+  border-color: rgba(255, 255, 255, 0.24);
+}
+
+.settingsPanel {
+  width: 100%;
+  padding: 16px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: rgba(31, 30, 42, 0.86);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.28);
+}
+
+.settingsPanel h2 {
+  margin: 0 0 14px;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.settingControl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  align-items: center;
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.settingControl strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.settingControl input {
+  grid-column: 1 / -1;
+  width: 100%;
+  accent-color: #d5b5ee;
+}
+
+.settingControl input.settingCheckbox {
+  grid-column: 2;
+  justify-self: end;
+  width: 18px;
+  height: 18px;
+}
+
 @media (max-width: 720px) {
   .stage {
     min-height: 100vh;
@@ -161,6 +286,17 @@ button {
   .hud {
     inset: auto 16px 16px;
     width: auto;
+  }
+
+  .settingsDock {
+    inset: 16px 16px auto;
+    width: auto;
+  }
+
+  .conversationPanel {
+    inset: auto 0 0;
+    width: 100%;
+    padding: 56px 16px 16px;
   }
 
 }

@@ -34,9 +34,10 @@ import type {
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import GLBCharacter from "./GLBCharacter";
 import { type AnimationStatus } from "./VRMCharacter";
+import type { ConversationAnimation } from "@/lib/conversationTree";
 
 const OCEAN_LAYER = 1;
-const sleepIdleMs = 30_000;
+const sleepIdleMs = 15_000;
 const introCameraDuration = 3.4;
 
 const animationOptions = [
@@ -142,12 +143,21 @@ function LimitedOrbitControls() {
   );
 }
 
-function IntroCameraDolly() {
+function IntroCameraDolly({ enabled }: { enabled: boolean }) {
   const camera = useThree((state) => state.camera);
   const startTime = useRef<number | null>(null);
   const done = useRef(false);
 
   useFrame(({ clock }) => {
+    if (!enabled) {
+      if (!done.current) {
+        camera.position.set(0, 0, 0);
+        startTime.current = null;
+      }
+
+      return;
+    }
+
     if (done.current) {
       return;
     }
@@ -445,7 +455,7 @@ function StarParticles() {
   );
 }
 
-function OceanPlane() {
+function OceanPlane({ reflectionResolution }: { reflectionResolution: number }) {
   const ocean = useRef<ThreeMesh>(null);
 
   useEffect(() => {
@@ -470,16 +480,28 @@ function OceanPlane() {
         mixContrast={0.9}
         mixStrength={1}
         reflectorOffset={0.02}
-        resolution={128}
+        resolution={reflectionResolution}
         roughness={0.62}
       />
     </mesh>
   );
 }
 
-export default function CharacterCanvas() {
+export default function CharacterCanvas({
+  backgroundVisible,
+  conversationAnimation,
+  conversationAnimationNonce,
+  reflectionResolution,
+}: {
+  backgroundVisible: boolean;
+  conversationAnimation: ConversationAnimation;
+  conversationAnimationNonce: number;
+  reflectionResolution: number;
+}) {
   const directionalLight = useRef<ThreeDirectionalLight>(null);
   const sleepTimer = useRef<number | null>(null);
+  const handledConversationNonce = useRef(0);
+  const pendingWakeAnimation = useRef<ConversationAnimation | null>(null);
   const [status, setStatus] = useState<AnimationStatus>(initialStatus);
   const [error, setError] = useState<string | null>(null);
   const [playNonce, setPlayNonce] = useState(0);
@@ -500,7 +522,6 @@ export default function CharacterCanvas() {
   const selectAnimation = useCallback((animation: AnimationKey) => {
     setPaused(false);
     setSelectedAnimation(animation);
-    setPlayNonce((value) => value + 1);
   }, []);
 
   const clearSleepTimer = useCallback(() => {
@@ -528,6 +549,45 @@ export default function CharacterCanvas() {
   }, [clearSleepTimer, selectAnimation]);
 
   useEffect(() => {
+    armSleepTimer();
+
+    return clearSleepTimer;
+  }, [armSleepTimer, clearSleepTimer]);
+
+  useEffect(() => {
+    if (conversationAnimationNonce === 0) {
+      return;
+    }
+
+    if (handledConversationNonce.current === conversationAnimationNonce) {
+      return;
+    }
+
+    handledConversationNonce.current = conversationAnimationNonce;
+
+    if (sleepMode === "entering" || sleepMode === "asleep") {
+      pendingWakeAnimation.current = conversationAnimation;
+      wakeFromSleepMode();
+      return;
+    }
+
+    if (sleepMode === "waking") {
+      pendingWakeAnimation.current = conversationAnimation;
+      return;
+    }
+
+    selectAnimation(conversationAnimation);
+    armSleepTimer();
+  }, [
+    armSleepTimer,
+    conversationAnimation,
+    conversationAnimationNonce,
+    selectAnimation,
+    sleepMode,
+    wakeFromSleepMode,
+  ]);
+
+  useEffect(() => {
     if (
       selectedAnimation !== "intro" ||
       paused ||
@@ -539,7 +599,6 @@ export default function CharacterCanvas() {
 
     const timeout = window.setTimeout(() => {
       setSelectedAnimation("idle");
-      setPlayNonce((value) => value + 1);
     }, status.clipDuration * 1000);
 
     return () => window.clearTimeout(timeout);
@@ -573,8 +632,11 @@ export default function CharacterCanvas() {
     }
 
     const timeout = window.setTimeout(() => {
+      const wakeAnimation = pendingWakeAnimation.current;
+
+      pendingWakeAnimation.current = null;
       setSleepMode("awake");
-      selectAnimation("idle");
+      selectAnimation(wakeAnimation ?? "idle");
       armSleepTimer();
     }, Math.max(0, status.clipDuration * 1000 - 120));
 
@@ -589,38 +651,29 @@ export default function CharacterCanvas() {
   ]);
 
   useEffect(() => {
-    function handleInteraction(event: Event) {
-      if (event.type === "keydown" && (event as KeyboardEvent).repeat) {
-        return;
-      }
-
-      if (sleepMode === "entering" || sleepMode === "asleep") {
-        wakeFromSleepMode();
-        return;
-      }
-
-      if (sleepMode === "awake") {
-        armSleepTimer();
-      }
+    if (
+      (selectedAnimation !== "surprise" && selectedAnimation !== "laugh") ||
+      paused ||
+      sleepMode !== "awake" ||
+      !status.animationLoaded ||
+      status.clipDuration <= 0
+    ) {
+      return;
     }
 
-    if (sleepMode === "awake") {
-      armSleepTimer();
-    } else {
-      clearSleepTimer();
-    }
+    const timeout = window.setTimeout(() => {
+      selectAnimation("idle");
+    }, status.clipDuration * 1000);
 
-    window.addEventListener("pointerdown", handleInteraction);
-    window.addEventListener("keydown", handleInteraction);
-    window.addEventListener("touchstart", handleInteraction);
-
-    return () => {
-      clearSleepTimer();
-      window.removeEventListener("pointerdown", handleInteraction);
-      window.removeEventListener("keydown", handleInteraction);
-      window.removeEventListener("touchstart", handleInteraction);
-    };
-  }, [armSleepTimer, clearSleepTimer, sleepMode, wakeFromSleepMode]);
+    return () => window.clearTimeout(timeout);
+  }, [
+    paused,
+    selectAnimation,
+    selectedAnimation,
+    sleepMode,
+    status.animationLoaded,
+    status.clipDuration,
+  ]);
 
   return (
     <div className="canvasWrap">
@@ -647,8 +700,8 @@ export default function CharacterCanvas() {
         />
         <Suspense fallback={null}>
           <SkyGradient />
-          <BackgroundModel />
-          <OceanPlane />
+          {backgroundVisible ? <BackgroundModel /> : null}
+          <OceanPlane reflectionResolution={reflectionResolution} />
           <ReflectionLightMask lightRef={directionalLight} />
           <StarParticles />
           <GLBCharacter
@@ -663,7 +716,9 @@ export default function CharacterCanvas() {
           />
           <Environment preset="night" environmentIntensity={0.16} />
         </Suspense>
-        <IntroCameraDolly />
+        <IntroCameraDolly
+          enabled={selectedAnimation === "intro" && status.animationLoaded}
+        />
         <LimitedOrbitControls />
       </Canvas>
 

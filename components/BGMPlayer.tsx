@@ -8,16 +8,16 @@ const tracks = [
   "/music/bgm3.mp3",
   "/music/bgm4.mp3",
 ];
-const normalVolume = 0.55;
 
 function getNextDelayMs() {
   return (5 + Math.random() * 15) * 1000;
 }
 
-export default function BGMPlayer() {
+export default function BGMPlayer({ volume }: { volume: number }) {
   const audio = useRef<HTMLAudioElement | null>(null);
   const timeout = useRef<number | null>(null);
   const trackIndex = useRef(0);
+  const volumeRef = useRef(volume);
   const [blocked, setBlocked] = useState(false);
 
   const clearNextTimer = useCallback(() => {
@@ -40,7 +40,7 @@ export default function BGMPlayer() {
       trackIndex.current = index;
       currentAudio.src = tracks[index];
       currentAudio.currentTime = 0;
-      currentAudio.volume = normalVolume;
+      currentAudio.volume = volumeRef.current;
 
       try {
         await currentAudio.play();
@@ -76,6 +76,14 @@ export default function BGMPlayer() {
       audio.current = null;
     };
   }, [clearNextTimer, playNextAfterDelay, playTrack]);
+
+  useEffect(() => {
+    volumeRef.current = volume;
+
+    if (audio.current) {
+      audio.current.volume = volume;
+    }
+  }, [volume]);
 
   useEffect(() => {
     if (!blocked) {
