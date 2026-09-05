@@ -50,7 +50,9 @@ export class ConversationVoice {
   private loadReaction(url: string, context: AudioContext): Promise<AudioBuffer> {
     const cached = this.buffers.get(url);
     if (cached) return cached;
-    const pending = this.fetcher(url).then(async response => {
+    // Native browser fetch rejects a ConversationVoice instance as its receiver.
+    const fetcher = this.fetcher;
+    const pending = fetcher(url).then(async response => {
       if (!response.ok) throw new Error("Voice unavailable");
       return context.decodeAudioData(await response.arrayBuffer());
     }).catch(error => {

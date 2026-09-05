@@ -5,7 +5,7 @@ import { recentHistory, streamChat, type ChatMessage, type ChatAnimation } from 
 import aiVoices from "@/lib/aiVoices.json";
 import voiceEnvelopes from "@/lib/voiceEnvelopes.json";
 import { assetPath } from "@/lib/assetPath";
-import { ConversationVoice } from "@/lib/conversationVoice";
+import { ConversationVoice, type VoiceStatus } from "@/lib/conversationVoice";
 
 const endpoint = process.env.NEXT_PUBLIC_CHAT_API_URL ||
   (process.env.NODE_ENV === "development" ? "http://localhost:8787/api/chat" : "");
@@ -23,12 +23,13 @@ export default function AIChatPanel({ onAnimationRequest, onBusyChange, voiceRef
   const [reply, setReply] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>("idle");
   const request = useRef<AbortController | null>(null);
   const transcript = useRef<HTMLDivElement | null>(null);
   const followLatest = useRef(true);
 
   useEffect(() => {
-    const voice = new ConversationVoice(() => new Audio(), () => {});
+    const voice = new ConversationVoice(() => new Audio(), setVoiceStatus);
     voiceRef.current = voice;
     const onVisibilityChange = () => {
       if (document.hidden) voice.stop();
@@ -114,6 +115,9 @@ export default function AIChatPanel({ onAnimationRequest, onBusyChange, voiceRef
       </div>
       <p className="srOnly" aria-live="polite">{busy ? "返事をしています。" : history.at(-1)?.content}</p>
       {error && <p className="aiError" role="alert">{error}</p>}
+      {(voiceStatus === "error" || voiceStatus === "blocked") && <p className="aiNotice" role="status">
+        音声を再生できませんでした。次の送信時に再試行します。
+      </p>}
       {!endpoint && <p className="aiNotice">AIチャットは準備中です</p>}
       <form className="aiChatForm" onSubmit={send}>
         <label htmlFor="ai-message" className="srOnly">メッセージ</label>

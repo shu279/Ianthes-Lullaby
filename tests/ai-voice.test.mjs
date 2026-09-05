@@ -85,6 +85,19 @@ test('Send prepares audio immediately, cached clips replay, and the mouth follow
   assert.equal(context.state, 'closed');
 });
 
+test('voice downloads call browser fetch without a player object as the receiver', async () => {
+  function browserFetch() {
+    if (this !== undefined && this !== globalThis) throw new TypeError("Failed to execute 'fetch' on 'Window': Illegal invocation");
+    return Promise.resolve(new Response(new Uint8Array([0])));
+  }
+  const { player, statuses, sources } = fixture(browserFetch);
+  player.prepareReactions(['/voice/ai/chuckle.wav']);
+  await player.playReaction('/voice/ai/chuckle.wav', envelope);
+  assert.equal(statuses.at(-1), 'playing');
+  assert.equal(sources.length, 1);
+  assert.ok(sources[0].started);
+});
+
 test('stopping or switching to a recorded branch cancels even a late AI audio download', async () => {
   const download = deferred();
   const { player, sources, statuses, audio } = fixture(() => download.promise);
