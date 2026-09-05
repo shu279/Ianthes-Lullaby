@@ -26,17 +26,16 @@ web server to preview an export; `next start` does not serve static exports.
 
 ## AI mode
 
-The app has separate **ボイス会話** and **AIモード** tabs. Voice dialogue keeps its
-current branch when switching. AI mode adds Japanese free-text chat, recent
-conversation history, character-by-character streaming, and allowlisted
+The app opens directly into AI chat. It supports Japanese free-text messages,
+recent conversation history, character-by-character streaming, and allowlisted
 `idle` / `laugh` / `surprise` reactions. BGM volume stays unchanged.
 
 AI replies can also start with a short recorded reaction and matching lip sync.
 Gemini chooses one of the ten clips in `lib/aiVoices.json` (for example 「ふふふ」,
 「うーん」 or 「ん？」), or stays silent when none fits. These are short reactions;
 the rest of the generated reply is displayed as text. Clicking Send prepares the
-audio for playback after the network response. Stopping, switching modes, or
-hiding the page stops the voice.
+audio for playback after the network response. Stopping, leaving the page, or
+hiding it stops the voice. The AI chat panel owns the audio player lifecycle.
 
 The AI clips live in `public/voice/ai/`, separate from the numbered conversation
 recordings. To add one, publish the WAV, add its ID, filename, spoken line and
@@ -49,11 +48,7 @@ handles `POST /api/chat` on Cloudflare Workers. The optional quote retrieval use
 local authored examples. See [backend setup and deployment](backend/README.md).
 A Gemini API key and a deployed API URL are required for real AI replies.
 
-## Recorded conversation
-
-Click **話しかける** to start the voiced conversation. Choices play the matching
-recording. BGM stays at the user's selected volume during dialogue. Choosing
-another reply or hiding the page stops the previous recording.
+## Recordings and lip sync
 
 The character's `Mouth_a` shape follows the recording's volume envelope at the
 current audio playback position, closing during pauses and after playback.
@@ -62,15 +57,16 @@ with `python3 scripts/generate-voice-envelopes.py` after changing the recordings
 The original `/voice/` folder is ignored by Git. Published WAVs and their volume
 envelopes are tracked so GitHub Pages builds contain all required assets.
 
-`lib/conversationTree.ts` contains the Japanese subtitles, choices, animation,
-and audio URL for each node. The supplied `voice/` recordings numbered 001–011
-are copied unchanged to `public/voice/001.wav`–`011.wav` for static hosting.
-Recording 012 is only 0.19 seconds and has no identifiable dialogue; it is not
-used. The final quiet scene is silent narration, shown in parentheses.
+The previous branching **ボイス会話** UI and mode switch have been removed.
+Its authored dialogue remains in `lib/conversationTree.ts` and its numbered
+recordings in `public/voice/001.wav`–`011.wav` as source material. AI reactions
+use the separate catalog and recordings described above.
 
-Conversation paths cover visiting to chat, talking about the day, and getting
-sleepy together. Every branch can lead to a quiet ending. Run `npm test` for
-graph, audio-asset, cancellation, and playback-error checks.
+Run `npm test` for streaming, audio-asset, cancellation, lip-sync, and
+playback-error checks, plus validation of the archived dialogue data.
+
+The sections below preserve the original project design and roadmap; the
+current app behavior is described above.
 
 ## Executive Summary
 Ianthe's Lullaby is a browser-based sleep support companion built around a gentle 3D character, calming audio, short nighttime conversation, and ASMR-style goodnight lines. The first version should focus on a desktop web experience: the user opens the app before bed, is greeted by Ianthe, listens to a shuffled sleep BGM playlist if music is enabled, and receives short comforting responses that help them settle down.

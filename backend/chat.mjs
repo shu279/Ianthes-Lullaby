@@ -56,7 +56,7 @@ export async function handleChat(request, env, fetcher = fetch) {
   if (Number(request.headers.get('Content-Length')) > MAX_BODY) return fail(413, 'メッセージが長すぎます。');
   const messages = validateMessages(await readBody(request));
   if (!messages) return fail(400, 'メッセージを短くして、もう一度お試しください。');
-  if (!env.GEMINI_API_KEY) return fail(503, 'AIモードは準備中です。ボイス会話をご利用ください。');
+  if (!env.GEMINI_API_KEY) return fail(503, 'AIチャットは準備中です。しばらくしてからお試しください。');
   if (env.CHAT_LIMITER) {
     const limit = await env.CHAT_LIMITER.limit({ key: request.headers.get('CF-Connecting-IP') || 'local' });
     if (!limit.success) return fail(429, '少し時間をおいてから話しかけてください。');

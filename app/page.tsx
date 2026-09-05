@@ -3,9 +3,8 @@
 import AIChatPanel from "@/components/AIChatPanel";
 import BGMPlayer from "@/components/BGMPlayer";
 import CharacterCanvas from "@/components/CharacterCanvas";
-import ConversationPanel from "@/components/ConversationPanel";
 import SettingsPanel from "@/components/SettingsPanel";
-import type { ConversationAnimation } from "@/lib/conversationTree";
+import type { ChatAnimation } from "@/lib/aiChat";
 import type { ConversationVoice } from "@/lib/conversationVoice";
 import { useCallback, useRef, useState } from "react";
 
@@ -14,7 +13,6 @@ const defaultBackgroundVisible = false;
 const defaultReflectionResolution = 128;
 
 export default function Home() {
-  const [mode, setMode] = useState<"voice" | "ai">("voice");
   const [aiBusy, setAiBusy] = useState(false);
   const [bgmVolume, setBgmVolume] = useState(defaultBgmVolume);
   const voiceRef = useRef<ConversationVoice | null>(null);
@@ -22,14 +20,14 @@ export default function Home() {
     defaultBackgroundVisible,
   );
   const [conversationAnimation, setConversationAnimation] =
-    useState<ConversationAnimation>("idle");
+    useState<ChatAnimation>("idle");
   const [conversationAnimationNonce, setConversationAnimationNonce] =
     useState(0);
   const [reflectionResolution, setReflectionResolution] = useState(
     defaultReflectionResolution,
   );
 
-  const requestConversationAnimation = useCallback((animation: ConversationAnimation) => {
+  const requestConversationAnimation = useCallback((animation: ChatAnimation) => {
     setConversationAnimation(animation);
     setConversationAnimationNonce((value) => value + 1);
   }, []);
@@ -45,20 +43,7 @@ export default function Home() {
           conversationAnimationNonce={conversationAnimationNonce}
           reflectionResolution={reflectionResolution}
         />
-        <div className="conversationModeSwitch" role="group" aria-label="会話モード">
-          <button type="button" aria-pressed={mode === "voice"} onClick={() => { voiceRef.current?.stop(); setMode("voice"); }}>ボイス会話</button>
-          <button type="button" aria-pressed={mode === "ai"} onClick={() => { voiceRef.current?.stop(); setMode("ai"); }}>AIモード</button>
-        </div>
-        <div hidden={mode !== "voice"}>
-          <ConversationPanel
-            active={mode === "voice"}
-            onAnimationRequest={requestConversationAnimation}
-            voiceRef={voiceRef}
-          />
-        </div>
-        <div hidden={mode !== "ai"}>
-          <AIChatPanel active={mode === "ai"} onAnimationRequest={requestConversationAnimation} onBusyChange={setAiBusy} voiceRef={voiceRef} />
-        </div>
+        <AIChatPanel onAnimationRequest={requestConversationAnimation} onBusyChange={setAiBusy} voiceRef={voiceRef} />
         <SettingsPanel
           backgroundVisible={backgroundVisible}
           bgmVolume={bgmVolume}

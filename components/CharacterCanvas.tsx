@@ -37,7 +37,7 @@ import type {
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import GLBCharacter from "./GLBCharacter";
 import { type AnimationStatus } from "./VRMCharacter";
-import type { ConversationAnimation } from "@/lib/conversationTree";
+import type { ChatAnimation } from "@/lib/aiChat";
 
 const OCEAN_LAYER = 1;
 const sleepIdleMs = 15_000;
@@ -497,14 +497,14 @@ export default function CharacterCanvas({
   voiceRef: RefObject<ConversationVoice | null>;
   conversationBusy: boolean;
   backgroundVisible: boolean;
-  conversationAnimation: ConversationAnimation;
+  conversationAnimation: ChatAnimation;
   conversationAnimationNonce: number;
   reflectionResolution: number;
 }) {
   const directionalLight = useRef<ThreeDirectionalLight>(null);
   const sleepTimer = useRef<number | null>(null);
   const handledConversationNonce = useRef(0);
-  const pendingWakeAnimation = useRef<ConversationAnimation | null>(null);
+  const pendingWakeAnimation = useRef<ChatAnimation | null>(null);
   const [status, setStatus] = useState<AnimationStatus>(initialStatus);
   const [, setError] = useState<string | null>(null);
   const [selectedAnimation, setSelectedAnimation] =

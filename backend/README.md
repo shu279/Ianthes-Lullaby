@@ -16,8 +16,8 @@ key is compiled into the browser, and the backend does not persist chat history.
 3. In one terminal run `npm run dev:api`.
 4. In another terminal run `npm run dev`, then open http://localhost:3000.
    Development automatically uses http://localhost:8787/api/chat.
-5. Select **AIモード**. The original **ボイス会話** retains its current node when
-   switching modes. Only AI mode sends typed messages to Gemini.
+5. AI chat is visible immediately. Send a message to talk to Gemini; opening
+   the page alone does not send a model request.
 
 `npm test` runs the existing voice tests plus mocked streaming API/client tests.
 `npm --prefix backend run check` verifies the Worker bundle without deployment.
@@ -80,14 +80,14 @@ Response events are NDJSON, for example:
 ```
 
 Animations are restricted to `idle`, `laugh`, and `surprise`; text renders as
-plain React text. Responses appear character by character. Mode switching or
+plain React text. Responses appear character by character. Leaving the page or
 **停止** aborts the request. Failed/partial responses are not added to history.
 The optional `voice` event names an allowlisted recording, never an arbitrary
 URL. The browser starts it once, when the first reply text appears, using audio
 prepared from the Send gesture. Short recordings have mouth envelopes; the rest
-of the AI reply remains text. Stop, errors, mode changes and page hiding cancel
-playback. BGM volume stays unchanged, and the original voiced branches keep
-their existing recordings.
+of the AI reply remains text. Stop, errors, page exit and page hiding cancel
+playback. BGM volume stays unchanged. The former branching voice UI is no longer
+displayed; AI chat owns audio setup and cleanup.
 Explicit requests such as 「声を出さないで」 or 「音声なし」 suppress the voice
 event for that reply even if the provider selects a recording.
 

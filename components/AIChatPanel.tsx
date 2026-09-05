@@ -5,15 +5,14 @@ import { recentHistory, streamChat, type ChatMessage, type ChatAnimation } from 
 import aiVoices from "@/lib/aiVoices.json";
 import voiceEnvelopes from "@/lib/voiceEnvelopes.json";
 import { assetPath } from "@/lib/assetPath";
-import type { ConversationVoice } from "@/lib/conversationVoice";
+import { ConversationVoice } from "@/lib/conversationVoice";
 
 const endpoint = process.env.NEXT_PUBLIC_CHAT_API_URL ||
   (process.env.NODE_ENV === "development" ? "http://localhost:8787/api/chat" : "");
 
 const reactionUrls = Object.values(aiVoices).map(voice => assetPath(voice.file as `/${string}`));
 
-export default function AIChatPanel({ active, onAnimationRequest, onBusyChange, voiceRef }: {
-  active: boolean;
+export default function AIChatPanel({ onAnimationRequest, onBusyChange, voiceRef }: {
   onAnimationRequest: (animation: ChatAnimation) => void;
   onBusyChange: (busy: boolean) => void;
   voiceRef: RefObject<ConversationVoice | null>;
@@ -29,15 +28,19 @@ export default function AIChatPanel({ active, onAnimationRequest, onBusyChange, 
   const followLatest = useRef(true);
 
   useEffect(() => {
-    if (!active) {
-      request.current?.abort();
-      voiceRef.current?.stopReaction();
-    }
+    const voice = new ConversationVoice(() => new Audio(), () => {});
+    voiceRef.current = voice;
+    const onVisibilityChange = () => {
+      if (document.hidden) voice.stop();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       request.current?.abort();
-      voiceRef.current?.stopReaction();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      voice.dispose();
+      if (voiceRef.current === voice) voiceRef.current = null;
     };
-  }, [active, voiceRef]);
+  }, [voiceRef]);
 
   useEffect(() => {
     if (transcript.current && followLatest.current) transcript.current.scrollTop = transcript.current.scrollHeight;
@@ -111,7 +114,7 @@ export default function AIChatPanel({ active, onAnimationRequest, onBusyChange, 
       </div>
       <p className="srOnly" aria-live="polite">{busy ? "返事をしています。" : history.at(-1)?.content}</p>
       {error && <p className="aiError" role="alert">{error}</p>}
-      {!endpoint && <p className="aiNotice">AIモードは準備中です</p>}
+      {!endpoint && <p className="aiNotice">AIチャットは準備中です</p>}
       <form className="aiChatForm" onSubmit={send}>
         <label htmlFor="ai-message" className="srOnly">メッセージ</label>
         <textarea id="ai-message" placeholder="今の気持ちは？" rows={2} maxLength={1000}
