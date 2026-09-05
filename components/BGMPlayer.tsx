@@ -1,12 +1,14 @@
 "use client";
 
+import { assetPath } from "@/lib/assetPath";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const tracks = [
-  "/music/bgm1.mp3",
-  "/music/bgm2.mp3",
-  "/music/bgm3.mp3",
-  "/music/bgm4.mp3",
+  assetPath("/music/bgm1.mp3"),
+  assetPath("/music/bgm2.mp3"),
+  assetPath("/music/bgm3.mp3"),
+  assetPath("/music/bgm4.mp3"),
 ];
 
 function getNextDelayMs() {

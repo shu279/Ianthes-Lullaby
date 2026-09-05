@@ -1,5 +1,29 @@
 # Ianthe's Lullaby
 
+## GitHub Pages deployment
+
+The app exports a static site to `out/`. The workflow in
+`.github/workflows/pages.yml` builds and deploys every push to `main`.
+
+One-time setup: open the repository's **Settings → Pages**, then set
+**Build and deployment → Source** to **GitHub Actions**. If a workflow failed
+before Pages was enabled, rerun it from the **Actions** tab.
+
+Site URL: https://shu279.github.io/Ianthes-Lullaby/
+
+```sh
+npm ci
+npm run dev
+
+# Build with the GitHub Pages project path:
+NEXT_PUBLIC_BASE_PATH=/Ianthes-Lullaby npm run build
+```
+
+The workflow gets the base path from GitHub Pages. Public model, animation,
+texture, and music URLs use the same prefix through `lib/assetPath.ts`.
+For root-domain hosting, omit `NEXT_PUBLIC_BASE_PATH`. Serve `out/` with a static
+web server to preview an export; `next start` does not serve static exports.
+
 ## Executive Summary
 Ianthe's Lullaby is a browser-based sleep support companion built around a gentle 3D character, calming audio, short nighttime conversation, and ASMR-style goodnight lines. The first version should focus on a desktop web experience: the user opens the app before bed, is greeted by Ianthe, listens to a shuffled sleep BGM playlist if music is enabled, and receives short comforting responses that help them settle down.
 

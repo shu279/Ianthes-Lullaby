@@ -1,5 +1,7 @@
 "use client";
 
+import { assetPath } from "@/lib/assetPath";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import {
@@ -594,8 +596,8 @@ export default function GLBCharacter({
       try {
         const [modelGltf, metallicMask, emissionMask] = await Promise.all([
           loader.loadAsync(modelUrl),
-          textureLoader.loadAsync("/textures/character_metallic_mask.png"),
-          textureLoader.loadAsync("/textures/character_emission_mask.png"),
+          textureLoader.loadAsync(assetPath("/textures/character_metallic_mask.png")),
+          textureLoader.loadAsync(assetPath("/textures/character_emission_mask.png")),
         ]);
 
         if (cancelled || !root.current) {

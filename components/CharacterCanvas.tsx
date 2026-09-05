@@ -1,5 +1,7 @@
 "use client";
 
+import { assetPath } from "@/lib/assetPath";
+
 import {
   Suspense,
   useCallback,
@@ -44,42 +46,42 @@ const animationOptions = [
   {
     key: "intro",
     label: "Intro",
-    url: "/animations/intro.glb?v=20260614-flow-1",
+    url: assetPath("/animations/intro.glb?v=20260614-flow-1"),
   },
   {
     key: "idle",
     label: "Idle",
-    url: "/animations/idle.glb?v=20260614-flow-1",
+    url: assetPath("/animations/idle.glb?v=20260614-flow-1"),
   },
   {
     key: "pose",
     label: "Pose",
-    url: "/animations/pose.glb?v=20260614-flow-1",
+    url: assetPath("/animations/pose.glb?v=20260614-flow-1"),
   },
   {
     key: "surprise",
     label: "Surprise",
-    url: "/animations/surprise.glb?v=20260614-flow-1",
+    url: assetPath("/animations/surprise.glb?v=20260614-flow-1"),
   },
   {
     key: "attack",
     label: "Attack",
-    url: "/animations/attack.glb?v=20260614-flow-1",
+    url: assetPath("/animations/attack.glb?v=20260614-flow-1"),
   },
   {
     key: "laugh",
     label: "Laugh",
-    url: "/animations/laugh.glb?v=20260614-flow-1",
+    url: assetPath("/animations/laugh.glb?v=20260614-flow-1"),
   },
   {
     key: "sleepIn",
     label: "Sleep In",
-    url: "/animations/sleep_in.glb?v=20260614-flow-1",
+    url: assetPath("/animations/sleep_in.glb?v=20260614-flow-1"),
   },
   {
     key: "sleepOut",
     label: "Sleep Out",
-    url: "/animations/sleep_out.glb?v=20260614-flow-1",
+    url: assetPath("/animations/sleep_out.glb?v=20260614-flow-1"),
   },
 ] as const;
 
@@ -94,10 +96,6 @@ const initialStatus: AnimationStatus = {
   trackCount: 0,
   isPlaying: false,
 };
-
-function formatVector(values?: number[]) {
-  return values ? values.map((value) => value.toFixed(3)).join(", ") : "n/a";
-}
 
 function LimitedOrbitControls() {
   const controls = useRef<OrbitControlsImpl>(null);
@@ -119,13 +117,13 @@ function LimitedOrbitControls() {
 
     target.x = Math.min(0.65, Math.max(-0.65, target.x));
     target.y += (focusY - target.y) * 0.06;
-    target.y = Math.min(1.58, Math.max(-1, target.y));
+    target.y = Math.min(3, Math.max(-5.2, target.y));
     target.z = Math.min(0.55, Math.max(-0.55, target.z));
 
     current.object.position.x += target.x - previousX;
     current.object.position.y += target.y - previousY;
     current.object.position.z += target.z - previousZ;
-    current.object.position.y = Math.max(-1, current.object.position.y);
+    current.object.position.y = Math.max(-4.2, current.object.position.y);
     current.update();
   });
 
@@ -278,7 +276,7 @@ function SkyGradient() {
 }
 
 function BackgroundModel() {
-  const { scene } = useGLTF("/models/background.glb?v=20260615-bg-reset-2") as {
+  const { scene } = useGLTF(assetPath("/models/background.glb?v=20260615-bg-reset-2")) as {
     scene: Object3D;
   };
 
@@ -302,7 +300,7 @@ function StarParticles() {
   const material = useRef<ShaderMaterial>(null);
   const points = useRef<ThreePoints>(null);
   const geometry = useMemo(() => {
-    const starCount = 240;
+    const starCount = 400;
     const positions = new Float32Array(starCount * 3);
     const colors = new Float32Array(starCount * 3);
     const sizes = new Float32Array(starCount);
@@ -340,7 +338,7 @@ function StarParticles() {
       colors[index * 3] = color[0];
       colors[index * 3 + 1] = color[1];
       colors[index * 3 + 2] = color[2];
-      sizes[index] = 100 + ((index * 60) % 100) / 100 * 150;
+      sizes[index] = 100 + ((index * 60) % 100) / 100 * 200;
       phases[index] = ((index * 53) % 1000) / 1000 * Math.PI * 2;
       speeds[index] = 0.18 + ((index * 29) % 100) / 100 * 0.34;
       driftRadii[index] = 0.35 + ((index * 43) % 100) / 100 * 0.5;
@@ -471,7 +469,7 @@ function OceanPlane({ reflectionResolution }: { reflectionResolution: number }) 
       <circleGeometry args={[15, 96]} />
       <MeshReflectorMaterial
         blur={[120, 48]}
-        color="#a986cc"
+        color="#ab8bde"
         depthScale={0}
         envMapIntensity={0}
         metalness={0}
@@ -503,24 +501,18 @@ export default function CharacterCanvas({
   const handledConversationNonce = useRef(0);
   const pendingWakeAnimation = useRef<ConversationAnimation | null>(null);
   const [status, setStatus] = useState<AnimationStatus>(initialStatus);
-  const [error, setError] = useState<string | null>(null);
-  const [playNonce, setPlayNonce] = useState(0);
-  const [paused, setPaused] = useState(false);
+  const [, setError] = useState<string | null>(null);
   const [selectedAnimation, setSelectedAnimation] =
     useState<AnimationKey>("intro");
   const [sleepMode, setSleepMode] = useState<SleepMode>("awake");
+  const playNonce = 0;
+  const paused = false;
   const animationUrl =
     animationOptions.find((option) => option.key === selectedAnimation)?.url ??
     animationOptions[0].url;
   const shouldLoopAnimation = selectedAnimation === "idle";
 
-  const replay = useCallback(() => {
-    setPaused(false);
-    setPlayNonce((value) => value + 1);
-  }, []);
-
   const selectAnimation = useCallback((animation: AnimationKey) => {
-    setPaused(false);
     setSelectedAnimation(animation);
   }, []);
 
@@ -705,7 +697,7 @@ export default function CharacterCanvas({
           <ReflectionLightMask lightRef={directionalLight} />
           <StarParticles />
           <GLBCharacter
-            modelUrl="/models/character.glb?v=20260613-outline-1"
+            modelUrl={assetPath("/models/character.glb?v=20260613-outline-1")}
             animationUrl={animationUrl}
             loop={shouldLoopAnimation}
             toon
@@ -721,83 +713,6 @@ export default function CharacterCanvas({
         />
         <LimitedOrbitControls />
       </Canvas>
-
-      <aside className="hud" aria-live="polite">
-        <h1>Ianthe Animation Check</h1>
-        <p>Loads the character GLB and plays selected motion clips.</p>
-
-        <dl className="statusList">
-          <div className="statusRow">
-            <dt>VRM</dt>
-            <dd>{status.vrmLoaded ? "loaded" : "loading"}</dd>
-          </div>
-          <div className="statusRow">
-            <dt>Animation</dt>
-            <dd>{status.animationLoaded ? "loaded" : "loading"}</dd>
-          </div>
-          <div className="statusRow">
-            <dt>Clip</dt>
-            <dd>{status.clipName}</dd>
-          </div>
-          <div className="statusRow">
-            <dt>Duration</dt>
-            <dd>{status.clipDuration.toFixed(2)}s</dd>
-          </div>
-          <div className="statusRow">
-            <dt>Tracks</dt>
-            <dd>{status.trackCount}</dd>
-          </div>
-          <div className="statusRow">
-            <dt>Playback</dt>
-            <dd>{status.isPlaying && !paused ? "playing" : "paused"}</dd>
-          </div>
-          <div className="statusRow">
-            <dt>Mode</dt>
-            <dd>GLB direct</dd>
-          </div>
-          <div className="statusRow">
-            <dt>Hips pos</dt>
-            <dd>{formatVector(status.hipsPosition)}</dd>
-          </div>
-          <div className="statusRow">
-            <dt>Hips rot</dt>
-            <dd>{formatVector(status.hipsRotation)}</dd>
-          </div>
-          <div className="statusRow">
-            <dt>Eye close</dt>
-            <dd>
-              {status.eyeCloseDriver
-                ? `${status.eyeCloseDriver.influence.toFixed(3)} / y ${status.eyeCloseDriver.y.toFixed(3)}`
-                : "n/a"}
-            </dd>
-          </div>
-        </dl>
-
-        <div className="controls">
-          {animationOptions.map((option) => (
-            <button
-              className={selectedAnimation === option.key ? "primary" : undefined}
-              key={option.key}
-              type="button"
-              onClick={() => selectAnimation(option.key)}
-            >
-              {option.label}
-            </button>
-          ))}
-          <button className="primary" type="button" onClick={replay}>
-            Replay
-          </button>
-          <button
-            type="button"
-            onClick={() => setPaused((value) => !value)}
-            disabled={!status.animationLoaded}
-          >
-            {paused ? "Resume" : "Pause"}
-          </button>
-        </div>
-
-        {error ? <p className="error">{error}</p> : null}
-      </aside>
     </div>
   );
 }
