@@ -69,7 +69,7 @@ export async function handleChat(request, env, fetcher = fetch) {
   const cleanup = () => { clearTimeout(timeout); request.signal.removeEventListener('abort', onAbort); };
   let upstream;
   try {
-    const model = env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
+    const model = env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
     if (!/^[a-zA-Z0-9.-]+$/.test(model)) throw new Error('Invalid model');
     upstream = await fetcher(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`, {
       method: 'POST',

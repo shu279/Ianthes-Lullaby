@@ -1,7 +1,9 @@
 # AI chat backend
 
 The existing GitHub Pages app stays a static site. This Worker serves
-`POST /api/chat`; its URL is configured separately in the frontend. No Gemini
+`POST /api/chat` at https://ianthe-chat-api.ianthe-chat-api.workers.dev/api/chat.
+The GitHub Pages workflow uses this public URL by default; repository variable
+`CHAT_API_URL` can override it. No Gemini
 key is compiled into the browser, and the backend does not persist chat history.
 
 ## Local development
@@ -19,8 +21,8 @@ key is compiled into the browser, and the backend does not persist chat history.
 
 `npm test` runs the existing voice tests plus mocked streaming API/client tests.
 `npm --prefix backend run check` verifies the Worker bundle without deployment.
-Neither command calls a real model. A real-key smoke test is still required to
-verify account quota, model availability, and the character's actual replies.
+Neither command calls a real model. A real-key smoke test has verified Gemini streaming replies and animation tags.
+Repeat it after changing the account, model, or API configuration.
 
 ## Publish with GitHub Pages
 
@@ -31,10 +33,11 @@ verify account quota, model availability, and the character's actual replies.
    add `GEMINI_API_KEY` as a **Secret** in that Worker's Settings on Cloudflare.
 4. In GitHub repository **Settings → Secrets and variables → Actions → Variables**,
    create `CHAT_API_URL` with `https://<your-worker-host>/api/chat`.
-   This is a public URL, not a secret.
+   This is a public URL, not a secret. This step is optional for the current
+   deployment, whose URL is already the default in the Pages workflow.
 5. Rerun **Deploy to GitHub Pages** from GitHub Actions. The workflow embeds
-   `CHAT_API_URL` as `NEXT_PUBLIC_CHAT_API_URL`. Without this URL, AI mode shows a
-   preparation message and the original voice mode remains usable.
+   `CHAT_API_URL` (or the checked-in default) as `NEXT_PUBLIC_CHAT_API_URL`.
+   Builds without an API URL show a preparation message in AI mode.
 
 `wrangler.jsonc` permits the current Pages origin and local development origins.
 Update `ALLOWED_ORIGINS` if the site gets a custom domain. Deploy from `backend/`
@@ -55,7 +58,7 @@ Worker's secret storage; it is not needed by GitHub Actions.
 - `chat.mjs`: validates history, adds the server-owned system prompt, sends a Gemini
   streaming request, and returns newline-delimited JSON events.
 - `stream.mjs`: parses Gemini SSE chunks and extracts the first-line animation tag.
-- `GEMINI_MODEL`: defaults to `gemini-2.5-flash-lite`; change it in the Worker vars
+- `GEMINI_MODEL`: defaults to `gemini-3.5-flash-lite`; change it in the Worker vars
   if needed for your account. The endpoint is Gemini's `streamGenerateContent` API.
 
 The browser sends `{ "messages": [{ "role": "user", "content": "眠れない" }] }`.

@@ -29,7 +29,7 @@ jobs:
       - name: Build static site
         run: npm run build
         env:
-          NEXT_PUBLIC_CHAT_API_URL: ${{ vars.CHAT_API_URL }}
+          NEXT_PUBLIC_CHAT_API_URL: ${{ vars.CHAT_API_URL || 'https://ianthe-chat-api.ianthe-chat-api.workers.dev/api/chat' }}
           NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path }}
       - uses: actions/upload-pages-artifact@v3
         with:
