@@ -24,6 +24,18 @@ texture, and music URLs use the same prefix through `lib/assetPath.ts`.
 For root-domain hosting, omit `NEXT_PUBLIC_BASE_PATH`. Serve `out/` with a static
 web server to preview an export; `next start` does not serve static exports.
 
+## AI mode
+
+The app has separate **ボイス会話** and **AIモード** tabs. Voice dialogue keeps its
+current branch when switching. AI mode adds Japanese free-text chat, recent
+conversation history, character-by-character streaming, and allowlisted
+`idle` / `laugh` / `surprise` reactions. BGM volume stays unchanged.
+
+GitHub Pages serves the frontend; the separate Gemini backend in `backend/`
+handles `POST /api/chat` on Cloudflare Workers. The optional quote retrieval uses
+local authored examples. See [backend setup and deployment](backend/README.md).
+A Gemini API key and a deployed API URL are required for real AI replies.
+
 ## Recorded conversation
 
 Click **話しかける** to start the voiced conversation. Choices play the matching

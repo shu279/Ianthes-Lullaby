@@ -12,11 +12,13 @@ import {
 } from "@/lib/conversationTree";
 
 type ConversationPanelProps = {
+  active: boolean;
   onAnimationRequest: (animation: ConversationAnimation) => void;
   voiceRef: RefObject<ConversationVoice | null>;
 };
 
 export default function ConversationPanel({
+  active,
   onAnimationRequest,
   voiceRef,
 }: ConversationPanelProps) {
@@ -42,6 +44,10 @@ export default function ConversationPanel({
     };
   }, [player]);
 
+  useEffect(() => {
+    if (!active) player.current?.stop();
+  }, [active, player]);
+
   function playNode(nodeId: ConversationNodeId) {
     const node = conversationTree[nodeId];
     if (!node.voice) {
@@ -64,7 +70,7 @@ export default function ConversationPanel({
   }
 
   return (
-    <aside className="conversationPanel" aria-label="イアンテとの会話">
+    <aside className="conversationPanel" aria-label="イアンセとチャットする">
       <p className="conversationReply" aria-live="polite">
         {started ? currentNode.reply : " "}
       </p>

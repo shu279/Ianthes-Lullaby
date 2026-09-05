@@ -1,0 +1,2 @@
+# Copy to .dev.vars and set the key locally. Never commit the actual key.
+GEMINI_API_KEY=

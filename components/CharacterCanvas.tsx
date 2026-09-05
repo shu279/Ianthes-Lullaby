@@ -487,6 +487,7 @@ function OceanPlane({ reflectionResolution }: { reflectionResolution: number }) 
 }
 
 export default function CharacterCanvas({
+  conversationBusy,
   voiceRef,
   backgroundVisible,
   conversationAnimation,
@@ -494,6 +495,7 @@ export default function CharacterCanvas({
   reflectionResolution,
 }: {
   voiceRef: RefObject<ConversationVoice | null>;
+  conversationBusy: boolean;
   backgroundVisible: boolean;
   conversationAnimation: ConversationAnimation;
   conversationAnimationNonce: number;
@@ -508,7 +510,7 @@ export default function CharacterCanvas({
   const [selectedAnimation, setSelectedAnimation] =
     useState<AnimationKey>("intro");
   const [sleepMode, setSleepMode] = useState<SleepMode>("awake");
-  const playNonce = 0;
+  const playNonce = conversationAnimationNonce;
   const paused = false;
   const animationUrl =
     animationOptions.find((option) => option.key === selectedAnimation)?.url ??
@@ -534,8 +536,8 @@ export default function CharacterCanvas({
 
   const armSleepTimer = useCallback(() => {
     clearSleepTimer();
-    sleepTimer.current = window.setTimeout(enterSleepMode, sleepIdleMs);
-  }, [clearSleepTimer, enterSleepMode]);
+    if (!conversationBusy) sleepTimer.current = window.setTimeout(enterSleepMode, sleepIdleMs);
+  }, [clearSleepTimer, enterSleepMode, conversationBusy]);
 
   const wakeFromSleepMode = useCallback(() => {
     clearSleepTimer();
@@ -662,6 +664,7 @@ export default function CharacterCanvas({
 
     return () => window.clearTimeout(timeout);
   }, [
+    conversationAnimationNonce,
     paused,
     selectAnimation,
     selectedAnimation,
