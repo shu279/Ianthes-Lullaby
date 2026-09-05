@@ -66,7 +66,7 @@ export default function ConversationPanel({
   return (
     <aside className="conversationPanel" aria-label="イアンテとの会話">
       <p className="conversationReply" aria-live="polite">
-        {started ? currentNode.reply : "夜のひとときを、イアンテと。"}
+        {started ? currentNode.reply : " "}
       </p>
       <div className="choiceList">
         {started ? currentNode.choices.map((choice) => (
