@@ -135,7 +135,8 @@ button {
 
 .settingsDock {
   position: absolute;
-  inset: auto auto 24px 24px;
+  inset: 24px auto auto 24px;
+  z-index: 2;
   width: min(320px, calc(100vw - 32px));
   display: grid;
   gap: 10px;
@@ -251,17 +252,18 @@ button {
 }
 
 .aiChatPanel {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: min(420px, calc(100% - 48px));
-  max-height: calc(100% - 100px);
+  position: fixed;
+  inset: auto 0 0;
+  z-index: 1;
+  width: 100%;
+  max-height: 55vh;
+  max-height: 55dvh;
   display: flex;
   flex-direction: column;
-  padding: 18px;
+  padding: 18px 24px max(18px, env(safe-area-inset-bottom));
   border: 1px solid rgba(213, 181, 238, 0.2);
-  border-radius: 16px;
+  border-width: 1px 0 0;
+  border-radius: 16px 16px 0 0;
   background: rgba(22, 23, 38, 0.86);
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.24);
   backdrop-filter: blur(18px);
@@ -269,19 +271,20 @@ button {
 
 .aiChatHeader {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   font-size: 13px;
 }
 .aiChatHeader button { font-size: 11px; padding: 6px; }
-.aiTranscript { overflow-y: auto; min-height: 100px; max-height: 36vh; padding: 4px 0; overscroll-behavior: contain; }
+.aiTranscript { flex: 1 1 auto; overflow-y: auto; min-height: 0; max-height: 30vh; padding: 4px 0; overscroll-behavior: contain; }
 .aiWelcome { color: var(--muted); font-size: 14px; line-height: 1.8; padding: 12px 4px; }
 .aiMessage { max-width: 95%; font-size: 14px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; margin: 14px 0; padding: 10px 12px; border-radius: 10px; background: rgba(255, 255, 255, 0.04); }
 .aiMessage.user { margin-left: auto; background: rgba(213, 181, 238, 0.12); }
 .aiSpeaker { display: block; font-size: 10px; color: var(--muted); margin-bottom: 3px; }
 .aiCursor { color: #d5b5ee; }
-.aiChatForm { display: flex; gap: 8px; align-items: stretch; margin-top: 10px; }
+.aiChatForm { display: flex; flex-shrink: 0; gap: 8px; align-items: stretch; margin-top: 10px; }
 .aiChatForm textarea { min-width: 0; flex: 1; resize: vertical; max-height: 120px; font: inherit; font-size: 14px; line-height: 1.6; background: rgba(0, 0, 0, 0.2); color: var(--text); border: 1px solid var(--panel-border); border-radius: 9px; padding: 10px; }
 .aiChatPanel button:disabled { opacity: 0.45; cursor: default; }
 .aiNotice { color: var(--muted); font-size: 10px; line-height: 1.7; margin: 10px 0 0; }
@@ -292,8 +295,8 @@ button {
 @media (max-width: 720px) {
   .conversationModeSwitch { top: 16px; right: 16px; }
   .conversationModeSwitch button { font-size: 12px; padding: 8px 10px; }
-  .aiChatPanel { width: calc(100% - 24px); max-height: 53%; padding: 12px; }
-  .aiTranscript { min-height: 50px; max-height: 24vh; }
+  .aiChatPanel { padding: 12px 12px max(12px, env(safe-area-inset-bottom)); }
+  .aiTranscript { max-height: 24vh; }
   .settingsDock { width: min(320px, calc(100vw - 32px)); pointer-events: none; }
   .settingsDock > * { pointer-events: auto; }
 }
