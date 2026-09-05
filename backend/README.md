@@ -57,7 +57,11 @@ Worker's secret storage; it is not needed by GitHub Actions.
   this optional retrieval; no embeddings or external database are required.
 - `chat.mjs`: validates history, adds the server-owned system prompt, sends a Gemini
   streaming request, and returns newline-delimited JSON events.
-- `stream.mjs`: parses Gemini SSE chunks and extracts the first-line animation tag.
+- `stream.mjs`: parses Gemini SSE chunks and extracts the first-line animation and
+  voice tag, for example `[[laugh|chuckle]]`. Legacy `[[idle]]` tags still work.
+- `../lib/aiVoices.json`: shared recorded-voice catalog, including the spoken
+  reactions and when they fit. Gemini picks one voice ID or `none` per reply.
+  Changes to this catalog require both frontend and backend deployment.
 - `GEMINI_MODEL`: defaults to `gemini-3.5-flash-lite`; change it in the Worker vars
   if needed for your account. The endpoint is Gemini's `streamGenerateContent` API.
 
@@ -70,14 +74,22 @@ Response events are NDJSON, for example:
 
 ```jsonl
 {"type":"animation","animation":"idle"}
-{"type":"text","text":"今夜は、ゆっくり休みましょう。"}
+{"type":"voice","voice":"hmm"}
+{"type":"text","text":"んー。今夜は、ゆっくり休みましょう。"}
 {"type":"done"}
 ```
 
 Animations are restricted to `idle`, `laugh`, and `surprise`; text renders as
 plain React text. Responses appear character by character. Mode switching or
 **停止** aborts the request. Failed/partial responses are not added to history.
-AI mode is text-only; the recorded voice mode still has audio and lip sync.
+The optional `voice` event names an allowlisted recording, never an arbitrary
+URL. The browser starts it once, when the first reply text appears, using audio
+prepared from the Send gesture. Short recordings have mouth envelopes; the rest
+of the AI reply remains text. Stop, errors, mode changes and page hiding cancel
+playback. BGM volume stays unchanged, and the original voiced branches keep
+their existing recordings.
+Explicit requests such as 「声を出さないで」 or 「音声なし」 suppress the voice
+event for that reply even if the provider selects a recording.
 
 ## Limits
 

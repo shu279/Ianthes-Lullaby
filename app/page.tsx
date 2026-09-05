@@ -46,7 +46,7 @@ export default function Home() {
           reflectionResolution={reflectionResolution}
         />
         <div className="conversationModeSwitch" role="group" aria-label="会話モード">
-          <button type="button" aria-pressed={mode === "voice"} onClick={() => setMode("voice")}>ボイス会話</button>
+          <button type="button" aria-pressed={mode === "voice"} onClick={() => { voiceRef.current?.stop(); setMode("voice"); }}>ボイス会話</button>
           <button type="button" aria-pressed={mode === "ai"} onClick={() => { voiceRef.current?.stop(); setMode("ai"); }}>AIモード</button>
         </div>
         <div hidden={mode !== "voice"}>
@@ -57,7 +57,7 @@ export default function Home() {
           />
         </div>
         <div hidden={mode !== "ai"}>
-          <AIChatPanel active={mode === "ai"} onAnimationRequest={requestConversationAnimation} onBusyChange={setAiBusy} />
+          <AIChatPanel active={mode === "ai"} onAnimationRequest={requestConversationAnimation} onBusyChange={setAiBusy} voiceRef={voiceRef} />
         </div>
         <SettingsPanel
           backgroundVisible={backgroundVisible}

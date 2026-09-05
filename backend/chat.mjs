@@ -1,4 +1,4 @@
-import { buildSystemPrompt } from './persona.mjs';
+import { buildSystemPrompt, requestsSilentVoice } from './persona.mjs';
 import { readSSE, ReplyParser } from './stream.mjs';
 
 const encoder = new TextEncoder();
@@ -109,7 +109,7 @@ export async function handleChat(request, env, fetcher = fetch) {
         }
         controller.enqueue(encoder.encode(JSON.stringify(event) + '\n'));
       };
-      const parser = new ReplyParser(emit);
+      const parser = new ReplyParser(emit, { allowVoice: !requestsSilentVoice(messages.at(-1).content) });
       try {
         for await (const data of readSSE(upstream.body)) {
           if (data === '[DONE]') continue;

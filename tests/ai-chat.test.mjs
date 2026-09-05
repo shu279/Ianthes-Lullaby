@@ -1,14 +1,18 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import test from 'node:test';
 import ts from 'typescript';
 import worker, { handleChat, validateMessages } from '../backend/chat.mjs';
 import { readSSE, ReplyParser } from '../backend/stream.mjs';
-import { buildSystemPrompt, retrieveQuotes } from '../backend/persona.mjs';
+import { buildSystemPrompt, retrieveQuotes, requestsSilentVoice } from '../backend/persona.mjs';
+import aiVoices from '../lib/aiVoices.json' with { type: 'json' };
 
 const source = await readFile(new URL('../lib/aiChat.ts', import.meta.url), 'utf8');
-const { outputText } = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } });
-const { streamChat, recentHistory } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
+const { outputText } = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, esModuleInterop: true } });
+const client = {};
+new Function('require', 'exports', outputText)(createRequire(new URL('../lib/aiChat.ts', import.meta.url)), client);
+const { streamChat, recentHistory } = client;
 const encoder = new TextEncoder();
 const env = { ALLOWED_ORIGINS: 'https://shu279.github.io', GEMINI_API_KEY: 'test-key-never-public' };
 const message = [{ role: 'user', content: '眠れなくて、少し話したい' }];
@@ -24,7 +28,7 @@ function provider(frames) {
 }
 const part = text => ({ candidates: [{ content: { parts: [{ text }] } }] });
 const stop = { candidates: [{ finishReason: 'STOP' }] };
-const success = () => provider([part('[[lau'), part('gh]]\n'), part('ふふ。🌙ゆっくり休んでね。'), stop]);
+const success = () => provider([part('[[lau'), part('gh|chuc'), part('kle]]\n'), part('ふふ。🌙ゆっくり休んでね。'), stop]);
 
 test('request validation rejects system injection, nonalternating or oversized history', () => {
   assert.ok(validateMessages({ messages: message }));
@@ -76,7 +80,21 @@ test('RAG selects only matching authored quotes, can be disabled', () => {
   assert.ok(!buildSystemPrompt('眠れない', false).includes('口調の参考'));
 });
 
-test('end to end streaming protects key, passes history, triggers animation and reveals characters', async () => {
+test('voice selection accepts the catalog, supports silence, and rejects arbitrary IDs or paths', () => {
+  for (const id of [...Object.keys(aiVoices), 'none', 'constructor', '__proto__', 'https://bad.example/voice.wav']) {
+    const events = [];
+    const parser = new ReplyParser(event => events.push(event));
+    for (const char of `[[idle|${id}]]\nそうなのね。`) parser.push(char);
+    parser.push('', true);
+    assert.deepEqual(events.filter(event => event.type === 'voice'), Object.hasOwn(aiVoices, id) ? [{ type: 'voice', voice: id }] : []);
+    assert.equal(events.filter(event => event.type === 'text').map(event => event.text).join(''), 'そうなのね。');
+  }
+  const prompt = buildSystemPrompt('猫のまねをして');
+  for (const id of Object.keys(aiVoices)) assert.ok(prompt.includes(`${id}:`));
+  assert.ok(prompt.includes('none'));
+});
+
+test('end to end streaming protects key, passes history, triggers voice with first text and reveals characters', async () => {
   const messages = [...message, { role: 'assistant', content: 'そうなのね。' }, { role: 'user', content: '一緒に休もう' }];
   let upstreamRequest;
   const response = await handleChat(request(messages), env, async (url, init) => {
@@ -85,15 +103,60 @@ test('end to end streaming protects key, passes history, triggers animation and 
   });
   const animations = [];
   const displayed = [];
+  const voices = [];
   const reply = await streamChat({ endpoint: '/api/chat', messages, signal: new AbortController().signal,
-    onText: text => displayed.push(text), onAnimation: animation => animations.push(animation), delay: 0, fetcher: async () => response });
+    onText: text => displayed.push(text), onAnimation: animation => animations.push(animation),
+    onVoice: voice => voices.push({ voice, text: displayed.at(-1) }), delay: 0, fetcher: async () => response });
   assert.equal(reply, 'ふふ。🌙ゆっくり休んでね。');
   assert.deepEqual(animations, ['laugh']);
+  assert.deepEqual(voices, [{ voice: 'chuckle', text: 'ふ' }]);
   assert.deepEqual(displayed.map(text => Array.from(text).length), Array.from({ length: Array.from(reply).length }, (_, index) => index + 1));
   assert.deepEqual(upstreamRequest.body.contents.map(item => item.role), ['user', 'model', 'user']);
   assert.equal(upstreamRequest.init.headers['x-goog-api-key'], env.GEMINI_API_KEY);
   assert.ok(!upstreamRequest.init.body.includes(env.GEMINI_API_KEY));
   assert.ok(!reply.includes('[['));
+});
+
+test('client rejects unknown voices and ignores duplicate or late voice events', async () => {
+  const voices = [];
+  const events = [
+    { type: 'voice', voice: 'constructor' },
+    { type: 'voice', voice: '/voice/ai/meow.wav' },
+    { type: 'voice', voice: 'thinking' },
+    { type: 'voice', voice: 'chuckle' },
+    { type: 'text', text: 'うーん。' },
+    { type: 'voice', voice: 'meow' },
+    { type: 'text', text: '少し考えるわね。' },
+    { type: 'done' },
+  ];
+  const reply = await streamChat({ endpoint: '/api/chat', messages: message, signal: new AbortController().signal, delay: 0,
+    onText() {}, onAnimation() {}, onVoice: voice => voices.push(voice),
+    fetcher: async () => new Response(bytes(events.map(event => JSON.stringify(event)).join('\n')), { headers: { 'Content-Type': 'application/x-ndjson' } }),
+  });
+  assert.equal(reply, 'うーん。少し考えるわね。');
+  assert.deepEqual(voices, ['thinking']);
+});
+
+test('a voice tag without a reply never plays audio', async () => {
+  const voices = [];
+  await assert.rejects(streamChat({ endpoint: '/api/chat', messages: message, signal: new AbortController().signal, delay: 0,
+    onText() {}, onAnimation() {}, onVoice: voice => voices.push(voice),
+    fetcher: async () => new Response(bytes('{"type":"voice","voice":"meow"}\n{"type":"error","message":"途中"}\n'), { headers: { 'Content-Type': 'application/x-ndjson' } }),
+  }), /途中/);
+  assert.deepEqual(voices, []);
+});
+
+test('an explicit request without voice overrides a provider-selected recording for that reply', async () => {
+  for (const text of ['声は出さずにおやすみだけお願い', '声を出さないで', '音声なしで話して', 'ボイスはいらない']) {
+    assert.equal(requestsSilentVoice(text), true);
+    const response = await handleChat(request([{ role: 'user', content: text }]), env, async () => success());
+    const events = (await response.text()).trim().split('\n').map(line => JSON.parse(line));
+    assert.equal(events.some(event => event.type === 'voice'), false);
+    assert.equal(events.some(event => event.type === 'done'), true);
+    assert.ok(events.some(event => event.type === 'text'));
+  }
+  assert.equal(requestsSilentVoice('声を聞かせて'), false);
+  assert.equal(requestsSilentVoice('少し眠くなってきた'), false);
 });
 
 test('safety blocks and interrupted provider streams never report successful completion', async () => {

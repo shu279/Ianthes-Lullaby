@@ -8,7 +8,7 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
 envelopes = {}
-for path in sorted((root / 'public/voice').glob('*.wav')):
+for path in sorted((root / 'public/voice').rglob('*.wav')):
     with wave.open(str(path)) as audio:
         assert audio.getsampwidth() == 2 and audio.getnchannels() == 1
         samples = array.array('h', audio.readframes(audio.getnframes()))
@@ -21,7 +21,7 @@ for path in sorted((root / 'public/voice').glob('*.wav')):
         rms = math.sqrt(sum((v / 32768) ** 2 for v in block) / len(block))
         levels.append(rms)
     peak = max(max(levels), 0.01)
-    envelopes[f'/voice/{path.name}'] = {
+    envelopes['/' + path.relative_to(root / 'public').as_posix()] = {
         'fps': 50,
         'samples': [round(min(0.85, max(0, (v - 0.008) / peak) ** 0.65), 3) for v in levels],
     }

@@ -39,7 +39,7 @@ export default function ConversationPanel({
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
-      voice.stop();
+      voice.dispose();
       player.current = null;
     };
   }, [player]);

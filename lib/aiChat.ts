@@ -1,3 +1,6 @@
+import aiVoices from "./aiVoices.json";
+
+export type ChatVoice = keyof typeof aiVoices;
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 export type ChatAnimation = "idle" | "laugh" | "surprise";
 
@@ -18,12 +21,13 @@ function wait(ms: number, signal: AbortSignal) {
   });
 }
 
-export async function streamChat({ endpoint, messages, signal, onText, onAnimation, delay = 22, fetcher = fetch }: {
+export async function streamChat({ endpoint, messages, signal, onText, onAnimation, onVoice, delay = 22, fetcher = fetch }: {
   endpoint: string;
   messages: ChatMessage[];
   signal: AbortSignal;
   onText: (text: string) => void;
   onAnimation: (animation: ChatAnimation) => void;
+  onVoice?: (voice: ChatVoice) => void;
   delay?: number;
   fetcher?: typeof fetch;
 }): Promise<string> {
@@ -43,6 +47,8 @@ export async function streamChat({ endpoint, messages, signal, onText, onAnimati
   let buffer = "";
   let reply = "";
   let done = false;
+  let voice: ChatVoice | undefined;
+  let voiceStarted = false;
   try {
     while (!done) {
       signal.throwIfAborted();
@@ -55,15 +61,23 @@ export async function streamChat({ endpoint, messages, signal, onText, onAnimati
         const line = buffer.slice(0, end).trim();
         buffer = buffer.slice(end + 1);
         if (!line) continue;
+        signal.throwIfAborted();
         const event = JSON.parse(line);
         if (event.type === "animation" && ["idle", "laugh", "surprise"].includes(event.animation)) {
           onAnimation(event.animation);
+        } else if (event.type === "voice" && !voiceStarted && !voice && typeof event.voice === "string" && Object.hasOwn(aiVoices, event.voice)) {
+          voice = event.voice as ChatVoice;
         } else if (event.type === "text" && typeof event.text === "string") {
           for (const character of Array.from(event.text)) {
             signal.throwIfAborted();
             reply += character;
             if (reply.length > 1200) throw new Error("AIの応答が長すぎます。");
             onText(reply);
+            if (!voiceStarted && reply.trim()) {
+              voiceStarted = true;
+              signal.throwIfAborted();
+              if (voice) onVoice?.(voice);
+            }
             if (delay) await wait(delay, signal);
           }
         } else if (event.type === "error") {

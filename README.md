@@ -31,6 +31,19 @@ current branch when switching. AI mode adds Japanese free-text chat, recent
 conversation history, character-by-character streaming, and allowlisted
 `idle` / `laugh` / `surprise` reactions. BGM volume stays unchanged.
 
+AI replies can also start with a short recorded reaction and matching lip sync.
+Gemini chooses one of the ten clips in `lib/aiVoices.json` (for example 「ふふふ」,
+「うーん」 or 「ん？」), or stays silent when none fits. These are short reactions;
+the rest of the generated reply is displayed as text. Clicking Send prepares the
+audio for playback after the network response. Stopping, switching modes, or
+hiding the page stops the voice.
+
+The AI clips live in `public/voice/ai/`, separate from the numbered conversation
+recordings. To add one, publish the WAV, add its ID, filename, spoken line and
+usage description to `lib/aiVoices.json`, then regenerate the envelopes and
+deploy both the frontend and backend. The same catalog defines the prompt and
+the allowed voice IDs on both sides.
+
 GitHub Pages serves the frontend; the separate Gemini backend in `backend/`
 handles `POST /api/chat` on Cloudflare Workers. The optional quote retrieval uses
 local authored examples. See [backend setup and deployment](backend/README.md).

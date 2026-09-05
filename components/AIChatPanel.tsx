@@ -1,15 +1,22 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type RefObject } from "react";
 import { recentHistory, streamChat, type ChatMessage, type ChatAnimation } from "@/lib/aiChat";
+import aiVoices from "@/lib/aiVoices.json";
+import voiceEnvelopes from "@/lib/voiceEnvelopes.json";
+import { assetPath } from "@/lib/assetPath";
+import type { ConversationVoice } from "@/lib/conversationVoice";
 
 const endpoint = process.env.NEXT_PUBLIC_CHAT_API_URL ||
   (process.env.NODE_ENV === "development" ? "http://localhost:8787/api/chat" : "");
 
-export default function AIChatPanel({ active, onAnimationRequest, onBusyChange }: {
+const reactionUrls = Object.values(aiVoices).map(voice => assetPath(voice.file as `/${string}`));
+
+export default function AIChatPanel({ active, onAnimationRequest, onBusyChange, voiceRef }: {
   active: boolean;
   onAnimationRequest: (animation: ChatAnimation) => void;
   onBusyChange: (busy: boolean) => void;
+  voiceRef: RefObject<ConversationVoice | null>;
 }) {
   const [history, setHistory] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -22,9 +29,15 @@ export default function AIChatPanel({ active, onAnimationRequest, onBusyChange }
   const followLatest = useRef(true);
 
   useEffect(() => {
-    if (!active) request.current?.abort();
-    return () => { request.current?.abort(); };
-  }, [active]);
+    if (!active) {
+      request.current?.abort();
+      voiceRef.current?.stopReaction();
+    }
+    return () => {
+      request.current?.abort();
+      voiceRef.current?.stopReaction();
+    };
+  }, [active, voiceRef]);
 
   useEffect(() => {
     if (transcript.current && followLatest.current) transcript.current.scrollTop = transcript.current.scrollHeight;
@@ -34,6 +47,8 @@ export default function AIChatPanel({ active, onAnimationRequest, onBusyChange }
     event.preventDefault();
     const content = input.trim();
     if (!content || request.current || !endpoint) return;
+    voiceRef.current?.stop();
+    voiceRef.current?.prepareReactions(reactionUrls);
     const controller = new AbortController();
     request.current = controller;
     setBusy(true);
@@ -49,9 +64,15 @@ export default function AIChatPanel({ active, onAnimationRequest, onBusyChange }
       const text = await streamChat({
         endpoint, messages, signal: controller.signal,
         onText: setReply, onAnimation: onAnimationRequest,
+        onVoice: voiceId => {
+          if (controller.signal.aborted || document.hidden) return;
+          const { file } = aiVoices[voiceId];
+          void voiceRef.current?.playReaction(assetPath(file as `/${string}`), voiceEnvelopes[file as keyof typeof voiceEnvelopes]);
+        },
       });
       setHistory([...messages, { role: "assistant", content: text }]);
     } catch (failure) {
+      voiceRef.current?.stopReaction();
       setInput(content);
       setError(controller.signal.aborted ? "返事を中断しました。" :
         failure instanceof Error ? failure.message : "AIに接続できませんでした。");
@@ -66,6 +87,7 @@ export default function AIChatPanel({ active, onAnimationRequest, onBusyChange }
 
   function clearHistory() {
     if (request.current) return;
+    voiceRef.current?.stopReaction();
     setHistory([]);
     setError("");
   }
@@ -99,7 +121,7 @@ export default function AIChatPanel({ active, onAnimationRequest, onBusyChange }
               event.preventDefault(); event.currentTarget.form?.requestSubmit();
             }
           }} />
-        {busy ? <button type="button" onClick={() => request.current?.abort()}>停止</button>
+        {busy ? <button type="button" onClick={() => { voiceRef.current?.stopReaction(); request.current?.abort(); }}>停止</button>
           : <button type="submit" disabled={!endpoint || !input.trim()}>送信</button>}
       </form>
     </section>
