@@ -1,8 +1,9 @@
 import aiVoices from "./aiVoices.json";
+import chatAnimations from "./chatAnimations.json";
 
 export type ChatVoice = keyof typeof aiVoices;
 export type ChatMessage = { role: "user" | "assistant"; content: string };
-export type ChatAnimation = "idle" | "laugh" | "surprise";
+export type ChatAnimation = keyof typeof chatAnimations;
 
 export function recentHistory(history: ChatMessage[], content: string): ChatMessage[] {
   const messages = history.slice(-16);
@@ -63,8 +64,8 @@ export async function streamChat({ endpoint, messages, signal, onText, onAnimati
         if (!line) continue;
         signal.throwIfAborted();
         const event = JSON.parse(line);
-        if (event.type === "animation" && ["idle", "laugh", "surprise"].includes(event.animation)) {
-          onAnimation(event.animation);
+        if (event.type === "animation" && typeof event.animation === "string" && Object.hasOwn(chatAnimations, event.animation)) {
+          onAnimation(event.animation as ChatAnimation);
         } else if (event.type === "voice" && !voiceStarted && !voice && typeof event.voice === "string" && Object.hasOwn(aiVoices, event.voice)) {
           voice = event.voice as ChatVoice;
         } else if (event.type === "text" && typeof event.text === "string") {

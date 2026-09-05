@@ -42,6 +42,7 @@ type GLBCharacterProps = {
   toon: boolean;
   playNonce: number;
   paused: boolean;
+  onAnimationFinished: (playId: number) => void;
   onStatus: (status: AnimationStatus) => void;
   onError: (message: string | null) => void;
 };
@@ -50,6 +51,7 @@ type LoadedState = {
   mixer: AnimationMixer;
   action?: AnimationAction;
   clip?: AnimationClip;
+  clips: Map<string, AnimationClip>;
   eyeLookBones: EyeLookBone[];
   hips?: Group;
   morphDrivers: MorphDriver[];
@@ -572,6 +574,7 @@ export default function GLBCharacter({
   toon,
   playNonce,
   paused,
+  onAnimationFinished,
   onStatus,
   onError,
 }: GLBCharacterProps) {
@@ -581,6 +584,7 @@ export default function GLBCharacter({
   const frameCount = useRef(0);
   const loader = useMemo(() => new GLTFLoader(), []);
   const textureLoader = useMemo(() => new TextureLoader(), []);
+  const animationLoads = useRef(new Map<string, ReturnType<GLTFLoader["loadAsync"]>>());
   const [modelVersion, setModelVersion] = useState(0);
 
   useEffect(() => {
@@ -644,6 +648,7 @@ export default function GLBCharacter({
         });
         loaded.current = {
           mixer,
+          clips: new Map(),
           eyeLookBones,
           hips,
           morphDrivers,
@@ -686,6 +691,7 @@ export default function GLBCharacter({
 
   useEffect(() => {
     let cancelled = false;
+    let removeFinishedListener: (() => void) | undefined;
 
     async function loadAnimation() {
       const current = loaded.current;
@@ -705,23 +711,37 @@ export default function GLBCharacter({
       });
 
       try {
-        const animationGltf = await loader.loadAsync(animationUrl);
+        let clip = current.clips.get(animationUrl);
+        if (!clip) {
+          let pending = animationLoads.current.get(animationUrl);
+          if (!pending) {
+            pending = loader.loadAsync(animationUrl).catch(error => {
+              animationLoads.current.delete(animationUrl);
+              throw error;
+            });
+            animationLoads.current.set(animationUrl, pending);
+          }
+          const animationGltf = await pending;
+          if (cancelled || loaded.current !== current) return;
+          const sourceClip = animationGltf.animations[0];
+          if (!sourceClip) throw new Error("No animation clips were found in the selected GLB.");
+          clip = createClipWithMorphDriverTracks(sourceClip, current.scene);
+          current.clips.set(animationUrl, clip);
+        }
 
         if (cancelled || loaded.current !== current) {
           return;
         }
 
-        const sourceClip = animationGltf.animations[0];
-
-        if (!sourceClip) {
-          throw new Error("No animation clips were found in the selected GLB.");
-        }
-
-        const clip = createClipWithMorphDriverTracks(sourceClip, current.scene);
         const previousAction = current.action;
         const action = current.mixer.clipAction(clip);
         action.loop = loop ? LoopRepeat : LoopOnce;
         action.clampWhenFinished = !loop;
+        const onFinished = (event: { action: AnimationAction }) => {
+          if (!cancelled && event.action === action && loaded.current === current) onAnimationFinished(playNonce);
+        };
+        current.mixer.addEventListener("finished", onFinished);
+        removeFinishedListener = () => current.mixer.removeEventListener("finished", onFinished);
 
         if (previousAction && previousAction !== action) {
           action
@@ -766,8 +786,9 @@ export default function GLBCharacter({
 
     return () => {
       cancelled = true;
+      removeFinishedListener?.();
     };
-  }, [animationUrl, loader, loop, modelVersion, onError, onStatus]);
+  }, [animationUrl, loader, loop, modelVersion, onAnimationFinished, onError, onStatus, playNonce]);
 
   useEffect(() => {
     if (!loaded.current) {
@@ -778,23 +799,6 @@ export default function GLBCharacter({
       loaded.current.action.paused = paused;
     }
   }, [paused]);
-
-  useEffect(() => {
-    if (!loaded.current) {
-      return;
-    }
-
-    if (!loaded.current.action) {
-      return;
-    }
-
-    loaded.current.action
-      .reset()
-      .setEffectiveWeight(1)
-      .setEffectiveTimeScale(1)
-      .play();
-    loaded.current.action.paused = false;
-  }, [playNonce]);
 
   useFrame((_, delta) => {
     if (!loaded.current || paused) {

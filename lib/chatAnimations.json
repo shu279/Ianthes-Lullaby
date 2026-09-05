@@ -1,0 +1,10 @@
+{
+  "idle": { "file": "/animations/idle.glb", "label": "通常", "use": "普段の会話、相づち、落ち着いた返答" },
+  "laugh": { "file": "/animations/laugh.glb", "label": "笑う", "use": "嬉しい話、面白い話、軽い冗談、笑ってほしいという依頼" },
+  "surprise": { "file": "/animations/surprise.glb", "label": "驚く", "use": "予想外の話、驚き、びっくりしてほしいという依頼" },
+  "attack": { "file": "/animations/attack.glb", "label": "怒る", "use": "むっとする、軽くすねる、怒った演技を頼まれたとき。悩みを相談している相手を責めるためには使わない" },
+  "pose": { "file": "/animations/pose.glb", "label": "ポーズ", "use": "可愛くポーズを決める、得意げな返事、ポーズを見せてという依頼" },
+  "intro": { "file": "/animations/intro.glb", "label": "登場・挨拶", "use": "最初の挨拶、再会、改めて登場する演技。毎回の返答には使わない" },
+  "sleepIn": { "file": "/animations/sleep_in.glb", "label": "眠りにつく", "use": "おやすみの挨拶、一緒に寝る流れ、キャラクター自身に寝てほしいという依頼。寝た姿勢で待つ" },
+  "sleepOut": { "file": "/animations/sleep_out.glb", "label": "起きる", "use": "おはよう、起きてという呼びかけ、寝起きの返答" }
+}

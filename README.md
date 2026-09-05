@@ -27,8 +27,16 @@ web server to preview an export; `next start` does not serve static exports.
 ## AI mode
 
 The app opens directly into AI chat. It supports Japanese free-text messages,
-recent conversation history, character-by-character streaming, and allowlisted
-`idle` / `laugh` / `surprise` reactions. BGM volume stays unchanged.
+recent conversation history, character-by-character streaming, and all eight
+installed animations. BGM volume stays unchanged.
+
+`lib/chatAnimations.json` is the shared animation catalog: `idle`, `laugh`,
+`surprise`, `attack` (a light angry reaction), `pose`, `intro`, `sleepIn`, and
+`sleepOut`. Try 「怒ってみて」「ポーズを見せて」「寝ていいよ」「起きて」.
+One-shot reactions return to idle when the clip actually finishes. Sleep holds
+the final pose; the next message plays the waking clip before its reaction.
+Repeated reactions restart, and requests during waking keep only the latest
+reaction. The opening camera move runs only at startup.
 
 AI replies can also start with a short recorded reaction and matching lip sync.
 Gemini chooses one of the ten clips in `lib/aiVoices.json` (for example 「ふふふ」,

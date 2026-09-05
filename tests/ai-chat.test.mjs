@@ -7,6 +7,7 @@ import worker, { handleChat, validateMessages } from '../backend/chat.mjs';
 import { readSSE, ReplyParser } from '../backend/stream.mjs';
 import { buildSystemPrompt, retrieveQuotes, requestsSilentVoice } from '../backend/persona.mjs';
 import aiVoices from '../lib/aiVoices.json' with { type: 'json' };
+import chatAnimations from '../lib/chatAnimations.json' with { type: 'json' };
 
 const source = await readFile(new URL('../lib/aiChat.ts', import.meta.url), 'utf8');
 const { outputText } = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, esModuleInterop: true } });
@@ -70,7 +71,7 @@ test('animation header is allowlisted, hidden, and emitted once across chunks', 
   parser.push('[[sur'); parser.push('prise]]\nあなたも？'); parser.push('', true);
   assert.deepEqual(events, [{ type: 'animation', animation: 'surprise' }, { type: 'text', text: 'あなたも？' }]);
   const invalid = [];
-  new ReplyParser(event => invalid.push(event)).push('[[attack]]\n休んでね', true);
+  new ReplyParser(event => invalid.push(event)).push('[[unknown]]\n休んでね', true);
   assert.deepEqual(invalid, [{ type: 'animation', animation: 'idle' }, { type: 'text', text: '休んでね' }]);
 });
 
@@ -78,6 +79,20 @@ test('RAG selects only matching authored quotes, can be disabled', () => {
   assert.ok(retrieveQuotes('眠れない').join('').includes('寝かしつけ'));
   assert.equal(retrieveQuotes('無関係な文字列').length, 0);
   assert.ok(!buildSystemPrompt('眠れない', false).includes('口調の参考'));
+});
+
+test('every installed animation passes from Gemini through the backend to the chat client', async () => {
+  for (const animation of Object.keys(chatAnimations)) {
+    const events = [];
+    const response = await handleChat(request(), env, async () => provider([
+      part(`[[${animation.slice(0, 2)}`), part(`${animation.slice(2)}|hmm]]\nんー。`), stop,
+    ]));
+    const reply = await streamChat({ endpoint: '/api/chat', messages: message, signal: new AbortController().signal, delay: 0,
+      onText() {}, onAnimation: value => events.push(value), fetcher: async () => response });
+    assert.equal(reply, 'んー。');
+    assert.deepEqual(events, [animation]);
+    assert.ok(buildSystemPrompt('動いてみて').includes(`${animation}:`));
+  }
 });
 
 test('voice selection accepts the catalog, supports silence, and rejects arbitrary IDs or paths', () => {
@@ -172,7 +187,7 @@ test('client catches missing completion and refuses arbitrary animation values',
   const animations = [];
   await assert.rejects(streamChat({ endpoint: '/api/chat', messages: message, signal: new AbortController().signal, delay: 0,
     onText() {}, onAnimation: value => animations.push(value),
-    fetcher: async () => new Response(bytes('{"type":"animation","animation":"attack"}\n{"type":"text","text":"途中"}\n'), { headers: { 'Content-Type': 'application/x-ndjson' } }),
+    fetcher: async () => new Response(bytes('{"type":"animation","animation":"unknown"}\n{"type":"animation","animation":"constructor"}\n{"type":"text","text":"途中"}\n'), { headers: { 'Content-Type': 'application/x-ndjson' } }),
   }), /途中/);
   assert.deepEqual(animations, []);
 });

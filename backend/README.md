@@ -62,6 +62,8 @@ Worker's secret storage; it is not needed by GitHub Actions.
 - `../lib/aiVoices.json`: shared recorded-voice catalog, including the spoken
   reactions and when they fit. Gemini picks one voice ID or `none` per reply.
   Changes to this catalog require both frontend and backend deployment.
+- `../lib/chatAnimations.json`: shared catalog of all eight installed animation
+  IDs, files and usage descriptions. Deploy both sides when changing it.
 - `GEMINI_MODEL`: defaults to `gemini-3.5-flash-lite`; change it in the Worker vars
   if needed for your account. The endpoint is Gemini's `streamGenerateContent` API.
 
@@ -79,7 +81,8 @@ Response events are NDJSON, for example:
 {"type":"done"}
 ```
 
-Animations are restricted to `idle`, `laugh`, and `surprise`; text renders as
+Animations are restricted to the shared catalog: `idle`, `laugh`, `surprise`,
+`attack`, `pose`, `intro`, `sleepIn`, and `sleepOut`; text renders as
 plain React text. Responses appear character by character. Leaving the page or
 **停止** aborts the request. Failed/partial responses are not added to history.
 The optional `voice` event names an allowlisted recording, never an arbitrary
@@ -90,6 +93,9 @@ playback. BGM volume stays unchanged. The former branching voice UI is no longer
 displayed; AI chat owns audio setup and cleanup.
 Explicit requests such as 「声を出さないで」 or 「音声なし」 suppress the voice
 event for that reply even if the provider selects a recording.
+The browser routes sleep/wake transitions and returns one-shot reactions to
+idle on animation completion. The model selects a reaction ID; it cannot set
+animation URLs, control BGM, or change the camera.
 
 ## Limits
 

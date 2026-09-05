@@ -7,6 +7,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
 } from "react";
@@ -38,56 +39,12 @@ import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import GLBCharacter from "./GLBCharacter";
 import { type AnimationStatus } from "./VRMCharacter";
 import type { ChatAnimation } from "@/lib/aiChat";
+import chatAnimations from "@/lib/chatAnimations.json";
+import { chatAnimationReducer, initialChatAnimationState } from "@/lib/chatAnimationState";
 
 const OCEAN_LAYER = 1;
 const sleepIdleMs = 15_000;
 const introCameraDuration = 3.4;
-
-const animationOptions = [
-  {
-    key: "intro",
-    label: "Intro",
-    url: assetPath("/animations/intro.glb?v=20260614-flow-1"),
-  },
-  {
-    key: "idle",
-    label: "Idle",
-    url: assetPath("/animations/idle.glb?v=20260614-flow-1"),
-  },
-  {
-    key: "pose",
-    label: "Pose",
-    url: assetPath("/animations/pose.glb?v=20260614-flow-1"),
-  },
-  {
-    key: "surprise",
-    label: "Surprise",
-    url: assetPath("/animations/surprise.glb?v=20260614-flow-1"),
-  },
-  {
-    key: "attack",
-    label: "Attack",
-    url: assetPath("/animations/attack.glb?v=20260614-flow-1"),
-  },
-  {
-    key: "laugh",
-    label: "Laugh",
-    url: assetPath("/animations/laugh.glb?v=20260614-flow-1"),
-  },
-  {
-    key: "sleepIn",
-    label: "Sleep In",
-    url: assetPath("/animations/sleep_in.glb?v=20260614-flow-1"),
-  },
-  {
-    key: "sleepOut",
-    label: "Sleep Out",
-    url: assetPath("/animations/sleep_out.glb?v=20260614-flow-1"),
-  },
-] as const;
-
-type AnimationKey = (typeof animationOptions)[number]["key"];
-type SleepMode = "awake" | "entering" | "asleep" | "waking";
 
 const initialStatus: AnimationStatus = {
   vrmLoaded: false,
@@ -142,12 +99,16 @@ function LimitedOrbitControls() {
   );
 }
 
-function IntroCameraDolly({ enabled }: { enabled: boolean }) {
+function IntroCameraDolly({ enabled, opening }: { enabled: boolean; opening: boolean }) {
   const camera = useThree((state) => state.camera);
   const startTime = useRef<number | null>(null);
   const done = useRef(false);
 
   useFrame(({ clock }) => {
+    if (!opening && !done.current) {
+      camera.position.set(0, 1, 5.5);
+      done.current = true;
+    }
     if (!enabled) {
       if (!done.current) {
         camera.position.set(0, 0, 0);
@@ -502,176 +463,29 @@ export default function CharacterCanvas({
   reflectionResolution: number;
 }) {
   const directionalLight = useRef<ThreeDirectionalLight>(null);
-  const sleepTimer = useRef<number | null>(null);
   const handledConversationNonce = useRef(0);
-  const pendingWakeAnimation = useRef<ChatAnimation | null>(null);
   const [status, setStatus] = useState<AnimationStatus>(initialStatus);
   const [, setError] = useState<string | null>(null);
-  const [selectedAnimation, setSelectedAnimation] =
-    useState<AnimationKey>("intro");
-  const [sleepMode, setSleepMode] = useState<SleepMode>("awake");
-  const playNonce = conversationAnimationNonce;
-  const paused = false;
-  const animationUrl =
-    animationOptions.find((option) => option.key === selectedAnimation)?.url ??
-    animationOptions[0].url;
+  const [animationState, dispatchAnimation] = useReducer(chatAnimationReducer, initialChatAnimationState);
+  const selectedAnimation = animationState.animation;
+  const animationUrl = assetPath(chatAnimations[selectedAnimation].file as `/${string}`);
   const shouldLoopAnimation = selectedAnimation === "idle";
 
-  const selectAnimation = useCallback((animation: AnimationKey) => {
-    setSelectedAnimation(animation);
-  }, []);
-
-  const clearSleepTimer = useCallback(() => {
-    if (sleepTimer.current !== null) {
-      window.clearTimeout(sleepTimer.current);
-      sleepTimer.current = null;
-    }
-  }, []);
-
-  const enterSleepMode = useCallback(() => {
-    clearSleepTimer();
-    setSleepMode("entering");
-    selectAnimation("sleepIn");
-  }, [clearSleepTimer, selectAnimation]);
-
-  const armSleepTimer = useCallback(() => {
-    clearSleepTimer();
-    if (!conversationBusy) sleepTimer.current = window.setTimeout(enterSleepMode, sleepIdleMs);
-  }, [clearSleepTimer, enterSleepMode, conversationBusy]);
-
-  const wakeFromSleepMode = useCallback(() => {
-    clearSleepTimer();
-    setSleepMode("waking");
-    selectAnimation("sleepOut");
-  }, [clearSleepTimer, selectAnimation]);
-
   useEffect(() => {
-    armSleepTimer();
-
-    return clearSleepTimer;
-  }, [armSleepTimer, clearSleepTimer]);
-
-  useEffect(() => {
-    if (conversationAnimationNonce === 0) {
-      return;
-    }
-
-    if (handledConversationNonce.current === conversationAnimationNonce) {
-      return;
-    }
-
+    if (conversationAnimationNonce === 0 || handledConversationNonce.current === conversationAnimationNonce) return;
     handledConversationNonce.current = conversationAnimationNonce;
-
-    if (sleepMode === "entering" || sleepMode === "asleep") {
-      pendingWakeAnimation.current = conversationAnimation;
-      wakeFromSleepMode();
-      return;
-    }
-
-    if (sleepMode === "waking") {
-      pendingWakeAnimation.current = conversationAnimation;
-      return;
-    }
-
-    selectAnimation(conversationAnimation);
-    armSleepTimer();
-  }, [
-    armSleepTimer,
-    conversationAnimation,
-    conversationAnimationNonce,
-    selectAnimation,
-    sleepMode,
-    wakeFromSleepMode,
-  ]);
+    dispatchAnimation({ type: "request", animation: conversationAnimation });
+  }, [conversationAnimation, conversationAnimationNonce]);
 
   useEffect(() => {
-    if (
-      selectedAnimation !== "intro" ||
-      paused ||
-      !status.animationLoaded ||
-      status.clipDuration <= 0
-    ) {
-      return;
-    }
+    if (conversationBusy || animationState.sleep !== "awake" || selectedAnimation !== "idle") return;
+    const timer = window.setTimeout(() => dispatchAnimation({ type: "idleTimeout" }), sleepIdleMs);
+    return () => window.clearTimeout(timer);
+  }, [conversationBusy, animationState.sleep, animationState.playId, selectedAnimation]);
 
-    const timeout = window.setTimeout(() => {
-      setSelectedAnimation("idle");
-    }, status.clipDuration * 1000);
-
-    return () => window.clearTimeout(timeout);
-  }, [paused, selectedAnimation, status.animationLoaded, status.clipDuration]);
-
-  useEffect(() => {
-    if (
-      selectedAnimation !== "sleepIn" ||
-      sleepMode !== "entering" ||
-      !status.animationLoaded ||
-      status.clipDuration <= 0
-    ) {
-      return;
-    }
-
-    const timeout = window.setTimeout(() => {
-      setSleepMode("asleep");
-    }, status.clipDuration * 1000);
-
-    return () => window.clearTimeout(timeout);
-  }, [selectedAnimation, sleepMode, status.animationLoaded, status.clipDuration]);
-
-  useEffect(() => {
-    if (
-      selectedAnimation !== "sleepOut" ||
-      sleepMode !== "waking" ||
-      !status.animationLoaded ||
-      status.clipDuration <= 0
-    ) {
-      return;
-    }
-
-    const timeout = window.setTimeout(() => {
-      const wakeAnimation = pendingWakeAnimation.current;
-
-      pendingWakeAnimation.current = null;
-      setSleepMode("awake");
-      selectAnimation(wakeAnimation ?? "idle");
-      armSleepTimer();
-    }, Math.max(0, status.clipDuration * 1000 - 120));
-
-    return () => window.clearTimeout(timeout);
-  }, [
-    armSleepTimer,
-    selectAnimation,
-    selectedAnimation,
-    sleepMode,
-    status.animationLoaded,
-    status.clipDuration,
-  ]);
-
-  useEffect(() => {
-    if (
-      (selectedAnimation !== "surprise" && selectedAnimation !== "laugh") ||
-      paused ||
-      sleepMode !== "awake" ||
-      !status.animationLoaded ||
-      status.clipDuration <= 0
-    ) {
-      return;
-    }
-
-    const timeout = window.setTimeout(() => {
-      selectAnimation("idle");
-    }, status.clipDuration * 1000);
-
-    return () => window.clearTimeout(timeout);
-  }, [
-    conversationAnimationNonce,
-    paused,
-    selectAnimation,
-    selectedAnimation,
-    sleepMode,
-    status.animationLoaded,
-    status.clipDuration,
-  ]);
+  const finishAnimation = useCallback((playId: number) => {
+    dispatchAnimation({ type: "finished", playId });
+  }, []);
 
   return (
     <div className="canvasWrap">
@@ -708,15 +522,17 @@ export default function CharacterCanvas({
             animationUrl={animationUrl}
             loop={shouldLoopAnimation}
             toon
-            playNonce={playNonce}
-            paused={paused}
+            playNonce={animationState.playId}
+            paused={false}
+            onAnimationFinished={finishAnimation}
             onStatus={setStatus}
             onError={setError}
           />
           <Environment preset="night" environmentIntensity={0.16} />
         </Suspense>
         <IntroCameraDolly
-          enabled={selectedAnimation === "intro" && status.animationLoaded}
+          opening={animationState.opening}
+          enabled={animationState.opening && selectedAnimation === "intro" && status.animationLoaded}
         />
         <LimitedOrbitControls />
       </Canvas>
