@@ -252,8 +252,9 @@ button {
 
 .aiChatPanel {
   position: absolute;
-  right: 24px;
-  bottom: 24px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   width: min(420px, calc(100% - 48px));
   max-height: calc(100% - 100px);
   display: flex;
@@ -291,7 +292,7 @@ button {
 @media (max-width: 720px) {
   .conversationModeSwitch { top: 16px; right: 16px; }
   .conversationModeSwitch button { font-size: 12px; padding: 8px 10px; }
-  .aiChatPanel { right: 12px; bottom: 12px; width: calc(100% - 24px); max-height: 53%; padding: 12px; }
+  .aiChatPanel { width: calc(100% - 24px); max-height: 53%; padding: 12px; }
   .aiTranscript { min-height: 50px; max-height: 24vh; }
   .settingsDock { width: min(320px, calc(100vw - 32px)); pointer-events: none; }
   .settingsDock > * { pointer-events: auto; }
