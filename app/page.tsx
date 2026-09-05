@@ -5,7 +5,8 @@ import CharacterCanvas from "@/components/CharacterCanvas";
 import ConversationPanel from "@/components/ConversationPanel";
 import SettingsPanel from "@/components/SettingsPanel";
 import type { ConversationAnimation } from "@/lib/conversationTree";
-import { useState } from "react";
+import type { ConversationVoice } from "@/lib/conversationVoice";
+import { useRef, useState } from "react";
 
 const defaultBgmVolume = 0.55;
 const defaultBackgroundVisible = false;
@@ -13,7 +14,7 @@ const defaultReflectionResolution = 128;
 
 export default function Home() {
   const [bgmVolume, setBgmVolume] = useState(defaultBgmVolume);
-  const [speaking, setSpeaking] = useState(false);
+  const voiceRef = useRef<ConversationVoice | null>(null);
   const [backgroundVisible, setBackgroundVisible] = useState(
     defaultBackgroundVisible,
   );
@@ -34,6 +35,7 @@ export default function Home() {
     <main className="viewerShell">
       <section className="stage">
         <CharacterCanvas
+          voiceRef={voiceRef}
           backgroundVisible={backgroundVisible}
           conversationAnimation={conversationAnimation}
           conversationAnimationNonce={conversationAnimationNonce}
@@ -41,7 +43,7 @@ export default function Home() {
         />
         <ConversationPanel
           onAnimationRequest={requestConversationAnimation}
-          onSpeakingChange={setSpeaking}
+          voiceRef={voiceRef}
         />
         <SettingsPanel
           backgroundVisible={backgroundVisible}
@@ -51,7 +53,7 @@ export default function Home() {
           onReflectionResolutionChange={setReflectionResolution}
           reflectionResolution={reflectionResolution}
         />
-        <BGMPlayer volume={speaking ? bgmVolume * 0.25 : bgmVolume} />
+        <BGMPlayer volume={bgmVolume} />
       </section>
     </main>
   );

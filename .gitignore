@@ -3,3 +3,15 @@ node_modules
 .next
 out
 tsconfig.tsbuildinfo
+
+# Original voice exports; deployment-ready copies live in public/voice/.
+/voice/
+
+# Local environment, logs, and editor/cache files.
+.env*
+!.env.example
+*.log
+.idea/
+.vscode/
+__pycache__/
+*.pyc

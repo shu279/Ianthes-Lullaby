@@ -27,9 +27,15 @@ web server to preview an export; `next start` does not serve static exports.
 ## Recorded conversation
 
 Click **話しかける** to start the voiced conversation. Choices play the matching
-recording, with BGM reduced while the voice plays. Voice can be muted, stopped,
-or replayed. Choosing another reply stops the previous recording; hiding the
-page also stops the voice.
+recording. BGM stays at the user's selected volume during dialogue. Choosing
+another reply or hiding the page stops the previous recording.
+
+The character's `Mouth_a` shape follows the recording's volume envelope at the
+current audio playback position, closing during pauses and after playback.
+`lib/voiceEnvelopes.json` is generated from the published WAVs; regenerate it
+with `python3 scripts/generate-voice-envelopes.py` after changing the recordings.
+The original `/voice/` folder is ignored by Git. Published WAVs and their volume
+envelopes are tracked so GitHub Pages builds contain all required assets.
 
 `lib/conversationTree.ts` contains the Japanese subtitles, choices, animation,
 and audio URL for each node. The supplied `voice/` recordings numbered 001–011

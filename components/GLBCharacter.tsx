@@ -2,7 +2,8 @@
 
 import { assetPath } from "@/lib/assetPath";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import type { ConversationVoice } from "@/lib/conversationVoice";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import {
   AdditiveBlending,
@@ -34,6 +35,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import type { AnimationStatus } from "./VRMCharacter";
 
 type GLBCharacterProps = {
+  voiceRef: RefObject<ConversationVoice | null>;
   modelUrl: string;
   animationUrl: string;
   loop: boolean;
@@ -51,6 +53,7 @@ type LoadedState = {
   eyeLookBones: EyeLookBone[];
   hips?: Group;
   morphDrivers: MorphDriver[];
+  mouthTargets: { influences: number[]; index: number }[];
   scene: Group;
 };
 
@@ -562,6 +565,7 @@ function normalizeMaterials(root: Group, toon: boolean) {
 }
 
 export default function GLBCharacter({
+  voiceRef,
   modelUrl,
   animationUrl,
   loop,
@@ -630,11 +634,20 @@ export default function GLBCharacter({
         const hips = modelGltf.scene.getObjectByName("Hips") as Group | undefined;
         const morphDrivers = createMorphDrivers(modelGltf.scene);
         applyMorphDrivers(morphDrivers);
+        const mouthTargets: LoadedState["mouthTargets"] = [];
+        modelGltf.scene.traverse((object) => {
+          const mesh = object as MorphTargetMesh;
+          const index = mesh.morphTargetDictionary?.Mouth_a;
+          if (index !== undefined && mesh.morphTargetInfluences) {
+            mouthTargets.push({ influences: mesh.morphTargetInfluences, index });
+          }
+        });
         loaded.current = {
           mixer,
           eyeLookBones,
           hips,
           morphDrivers,
+          mouthTargets,
           scene: modelGltf.scene,
         };
         setModelVersion((value) => value + 1);
@@ -795,6 +808,11 @@ export default function GLBCharacter({
       eyeLookBones: loaded.current.eyeLookBones,
     });
     applyMorphDrivers(loaded.current.morphDrivers);
+    const mouthOpen = voiceRef.current?.mouthOpen() ?? 0;
+    for (const target of loaded.current.mouthTargets) {
+      // Apply after the animation mixer so facial clips cannot overwrite speech.
+      target.influences[target.index] = mouthOpen;
+    }
 
     frameCount.current += 1;
     if (frameCount.current % 12 !== 0) {

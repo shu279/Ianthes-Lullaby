@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
+import type { ConversationVoice } from "@/lib/conversationVoice";
 import type { RefObject } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import {
@@ -486,11 +487,13 @@ function OceanPlane({ reflectionResolution }: { reflectionResolution: number }) 
 }
 
 export default function CharacterCanvas({
+  voiceRef,
   backgroundVisible,
   conversationAnimation,
   conversationAnimationNonce,
   reflectionResolution,
 }: {
+  voiceRef: RefObject<ConversationVoice | null>;
   backgroundVisible: boolean;
   conversationAnimation: ConversationAnimation;
   conversationAnimationNonce: number;
@@ -697,6 +700,7 @@ export default function CharacterCanvas({
           <ReflectionLightMask lightRef={directionalLight} />
           <StarParticles />
           <GLBCharacter
+            voiceRef={voiceRef}
             modelUrl={assetPath("/models/character.glb?v=20260613-outline-1")}
             animationUrl={animationUrl}
             loop={shouldLoopAnimation}

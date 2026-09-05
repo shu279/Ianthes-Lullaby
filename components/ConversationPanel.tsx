@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState, type RefObject } from "react";
+import voiceEnvelopes from "@/lib/voiceEnvelopes.json";
 import { assetPath } from "@/lib/assetPath";
 import { ConversationVoice, type VoiceStatus } from "@/lib/conversationVoice";
 import {
@@ -12,29 +13,23 @@ import {
 
 type ConversationPanelProps = {
   onAnimationRequest: (animation: ConversationAnimation) => void;
-  onSpeakingChange: (speaking: boolean) => void;
+  voiceRef: RefObject<ConversationVoice | null>;
 };
 
 export default function ConversationPanel({
   onAnimationRequest,
-  onSpeakingChange,
+  voiceRef,
 }: ConversationPanelProps) {
   const [currentNodeId, setCurrentNodeId] = useState<ConversationNodeId>(
     initialConversationNodeId,
   );
   const [started, setStarted] = useState(false);
-  const [muted, setMuted] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>("idle");
-  const player = useRef<ConversationVoice | null>(null);
+  const player = voiceRef;
   const currentNode = conversationTree[currentNodeId];
 
-  const updateVoiceStatus = useCallback((status: VoiceStatus) => {
-    setVoiceStatus(status);
-    onSpeakingChange(status === "loading" || status === "playing");
-  }, [onSpeakingChange]);
-
   useEffect(() => {
-    const voice = new ConversationVoice(() => new Audio(), updateVoiceStatus);
+    const voice = new ConversationVoice(() => new Audio(), setVoiceStatus);
     player.current = voice;
     const onVisibilityChange = () => {
       if (document.hidden) voice.stop();
@@ -45,16 +40,16 @@ export default function ConversationPanel({
       voice.stop();
       player.current = null;
     };
-  }, [updateVoiceStatus]);
+  }, [player]);
 
   function playNode(nodeId: ConversationNodeId) {
     const node = conversationTree[nodeId];
-    if (muted || !node.voice) {
+    if (!node.voice) {
       player.current?.stop();
       return;
     }
     // Called directly from a click so browser autoplay restrictions are respected.
-    void player.current?.play(assetPath(node.voice));
+    void player.current?.play(assetPath(node.voice), voiceEnvelopes[node.voice as keyof typeof voiceEnvelopes]);
   }
 
   function choose(nextNodeId: ConversationNodeId) {
@@ -66,11 +61,6 @@ export default function ConversationPanel({
   function begin() {
     setStarted(true);
     playNode(initialConversationNodeId);
-  }
-
-  function toggleMuted() {
-    if (!muted) player.current?.stop();
-    setMuted((value) => !value);
   }
 
   return (
@@ -89,24 +79,11 @@ export default function ConversationPanel({
           </button>
         )) : <button type="button" onClick={begin}>話しかける</button>}
       </div>
-      <div className="voiceControls">
-        <button type="button" onClick={toggleMuted} aria-pressed={muted}>
-          {muted ? "ボイス：オフ" : "ボイス：オン"}
-        </button>
-        {started && currentNode.voice && !muted && (
-          <button type="button" onClick={() => playNode(currentNodeId)}>
-            もう一度聞く
-          </button>
-        )}
-        {voiceStatus === "playing" && (
-          <button type="button" onClick={() => player.current?.stop()}>声を止める</button>
-        )}
-        <span role="status">
-          {voiceStatus === "blocked" ? "「もう一度聞く」を押すと声が流れます。"
-            : voiceStatus === "error" ? "音声を読み込めませんでした。もう一度お試しください。"
-            : voiceStatus === "loading" ? "声を準備しています…" : ""}
-        </span>
-      </div>
+      {(voiceStatus === "blocked" || voiceStatus === "error") && (
+        <p className="voiceStatus" role="status">
+          音声を再生できませんでした。会話はそのまま続けられます。
+        </p>
+      )}
     </aside>
   );
 }

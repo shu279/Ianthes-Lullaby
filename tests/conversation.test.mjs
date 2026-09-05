@@ -108,3 +108,35 @@ test('failed assets release the speaking state and ignore later play resolution'
   assert.ok(clips[0].paused);
   assert.equal(statuses.at(-1), 'error');
 });
+
+test('mouth follows audio playback time and closes on silence, pause, and stop', async () => {
+  const { player, clips } = fixture();
+  const pending = player.play('/voice/001.wav', { fps: 50, samples: [0, 0.8, 0, 0] });
+  clips[0].currentTime = 0;
+  assert.equal(player.mouthOpen(), 0);
+  clips[0].resolve();
+  await pending;
+  clips[0].currentTime = 0.02;
+  assert.equal(player.mouthOpen(), 0.8);
+  clips[0].currentTime = 0.03;
+  assert.ok(Math.abs(player.mouthOpen() - 0.4) < 0.0001);
+  clips[0].currentTime = 0.04;
+  assert.equal(player.mouthOpen(), 0);
+  clips[0].currentTime = 0.02;
+  clips[0].paused = true;
+  assert.equal(player.mouthOpen(), 0);
+  clips[0].paused = false;
+  player.stop();
+  assert.equal(player.mouthOpen(), 0);
+});
+
+test('every spoken node has a bounded, nonempty mouth envelope', async () => {
+  const envelopes = JSON.parse(await readFile(new URL('../lib/voiceEnvelopes.json', import.meta.url)));
+  for (const node of Object.values(tree)) {
+    if (!node.voice) continue;
+    const envelope = envelopes[node.voice];
+    assert.equal(envelope.fps, 50);
+    assert.ok(envelope.samples.some(value => value > 0));
+    assert.ok(envelope.samples.every(value => value >= 0 && value <= 0.85));
+  }
+});
