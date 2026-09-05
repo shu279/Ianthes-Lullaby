@@ -13,6 +13,7 @@ const defaultReflectionResolution = 128;
 
 export default function Home() {
   const [bgmVolume, setBgmVolume] = useState(defaultBgmVolume);
+  const [speaking, setSpeaking] = useState(false);
   const [backgroundVisible, setBackgroundVisible] = useState(
     defaultBackgroundVisible,
   );
@@ -40,6 +41,7 @@ export default function Home() {
         />
         <ConversationPanel
           onAnimationRequest={requestConversationAnimation}
+          onSpeakingChange={setSpeaking}
         />
         <SettingsPanel
           backgroundVisible={backgroundVisible}
@@ -49,7 +51,7 @@ export default function Home() {
           onReflectionResolutionChange={setReflectionResolution}
           reflectionResolution={reflectionResolution}
         />
-        <BGMPlayer volume={bgmVolume} />
+        <BGMPlayer volume={speaking ? bgmVolume * 0.25 : bgmVolume} />
       </section>
     </main>
   );

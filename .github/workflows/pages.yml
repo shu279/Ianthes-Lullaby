@@ -25,6 +25,7 @@ jobs:
         id: pages
         uses: actions/configure-pages@v5
       - run: npm ci
+      - run: npm test
       - name: Build static site
         run: npm run build
         env:

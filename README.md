@@ -24,6 +24,23 @@ texture, and music URLs use the same prefix through `lib/assetPath.ts`.
 For root-domain hosting, omit `NEXT_PUBLIC_BASE_PATH`. Serve `out/` with a static
 web server to preview an export; `next start` does not serve static exports.
 
+## Recorded conversation
+
+Click **話しかける** to start the voiced conversation. Choices play the matching
+recording, with BGM reduced while the voice plays. Voice can be muted, stopped,
+or replayed. Choosing another reply stops the previous recording; hiding the
+page also stops the voice.
+
+`lib/conversationTree.ts` contains the Japanese subtitles, choices, animation,
+and audio URL for each node. The supplied `voice/` recordings numbered 001–011
+are copied unchanged to `public/voice/001.wav`–`011.wav` for static hosting.
+Recording 012 is only 0.19 seconds and has no identifiable dialogue; it is not
+used. The final quiet scene is silent narration, shown in parentheses.
+
+Conversation paths cover visiting to chat, talking about the day, and getting
+sleepy together. Every branch can lead to a quiet ending. Run `npm test` for
+graph, audio-asset, cancellation, and playback-error checks.
+
 ## Executive Summary
 Ianthe's Lullaby is a browser-based sleep support companion built around a gentle 3D character, calming audio, short nighttime conversation, and ASMR-style goodnight lines. The first version should focus on a desktop web experience: the user opens the app before bed, is greeted by Ianthe, listens to a shuffled sleep BGM playlist if music is enabled, and receives short comforting responses that help them settle down.
 

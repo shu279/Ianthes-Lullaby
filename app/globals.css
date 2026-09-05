@@ -121,6 +121,39 @@ button {
   background: rgba(255, 255, 255, 0.12);
 }
 
+.voiceControls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin: 12px auto 0;
+  color: var(--muted);
+  font-size: 12px;
+  pointer-events: auto;
+}
+
+.voiceControls button {
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: rgba(31, 30, 42, 0.5);
+  color: inherit;
+  cursor: pointer;
+}
+
+.voiceControls button:hover {
+  color: var(--text);
+  border-color: var(--panel-border);
+}
+
+.voiceControls button:focus-visible,
+.choiceList button:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 3px;
+}
+
 .settingsDock {
   position: absolute;
   inset: auto auto 24px 24px;

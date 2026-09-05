@@ -1,5 +1,10 @@
 export type ConversationAnimation = "idle" | "surprise" | "laugh";
 
+export type ConversationNodeId =
+  | "start" | "check_in" | "free_time" | "her_day" | "sleepy"
+  | "busy_day" | "lazy_day" | "only_visitor" | "you_too"
+  | "tuck_in" | "drowsy" | "quiet";
+
 export type ConversationChoice = {
   label: string;
   next: ConversationNodeId;
@@ -8,139 +13,127 @@ export type ConversationChoice = {
 export type ConversationNode = {
   id: ConversationNodeId;
   reply: string;
-  emotion: string;
   animation: ConversationAnimation;
-  voiceStyle: string;
+  voice?: `/voice/${string}.wav`;
   choices: ConversationChoice[];
   sleepRedirect?: boolean;
 };
 
-export type ConversationNodeId =
-  | "start"
-  | "very_tired"
-  | "restless"
-  | "comfort"
-  | "quiet"
-  | "goodnight"
-  | "breathing"
-  | "small_smile"
-  | "sleep_redirect";
-
+// Spoken replies follow the supplied recordings. Parentheses mark silent narration.
 export const conversationTree: Record<ConversationNodeId, ConversationNode> = {
   start: {
     id: "start",
-    reply:
-      "こんばんは。そばにいるね。今夜は、どんなふうに休みたい？",
-    emotion: "loving",
+    reply: "あら、こんばんは。",
     animation: "idle",
-    voiceStyle: "soft",
+    voice: "/voice/001.wav",
+    choices: [{ label: "こんばんは。ちょっとお邪魔してもいい？", next: "check_in" }],
+  },
+  check_in: {
+    id: "check_in",
+    reply: "今日はどうしたのかしら？",
+    animation: "idle",
+    voice: "/voice/002.wav",
     choices: [
-      { label: "すごく疲れた", next: "very_tired" },
-      { label: "頭が落ち着かない", next: "restless" },
-      { label: "静かにそばにいて", next: "quiet" },
+      { label: "暇だったから、話しに来た", next: "free_time" },
+      { label: "眠れなくて。", next: "tuck_in" },
     ],
   },
-  very_tired: {
-    id: "very_tired",
-    reply:
-      "今日はもう、じゅうぶん頑張ったよ。肩の力を少し抜いて。今は何も解決しなくていいからね。",
-    emotion: "comforting",
-    animation: "idle",
-    voiceStyle: "warm",
+  free_time: {
+    id: "free_time",
+    reply: "奇遇ね。私もちょうど暇してたのよ。",
+    animation: "laugh",
+    voice: "/voice/003.wav",
     choices: [
-      { label: "おやすみを言って", next: "goodnight" },
-      { label: "呼吸を整えたい", next: "breathing" },
-      { label: "静かにいて", next: "quiet" },
+      { label: "今日は何をしてたの？", next: "her_day" },
     ],
   },
-  restless: {
-    id: "restless",
-    reply:
-      "じゃあ、部屋の中を少しだけ静かにしよう。考えごとは、ひとつずつドアの外で待っててもらおうね。",
-    emotion: "reassuring",
+  her_day: {
+    id: "her_day",
+    reply: "今日はちょっと忙しかったかも。あなたは何してたのかしら？",
+    animation: "idle",
+    voice: "/voice/004.wav",
+    choices: [
+      { label: "勉強や仕事を頑張ってた", next: "busy_day" },
+      { label: "好きなことをして過ごしてた", next: "busy_day" },
+      { label: "特になにもしなかった", next: "lazy_day" },
+    ],
+  },
+  busy_day: {
+    id: "busy_day",
+    reply: "ふーん。まあぼーっとしてるよりはいいかもね。",
+    animation: "idle",
+    voice: "/voice/006.wav",
+    choices: [
+      { label: "そっちは、まだ眠くない？", next: "sleepy" },
+      { label: "誰かと遊んだりした？", next: "only_visitor" },
+    ],
+  },
+  lazy_day: {
+    id: "lazy_day",
+    reply: "ちょっとは何かやったら？",
     animation: "surprise",
-    voiceStyle: "gentle",
+    voice: "/voice/007.wav",
     choices: [
-      { label: "呼吸を整えたい", next: "breathing" },
-      { label: "やさしい言葉がほしい", next: "comfort" },
-      { label: "静かにそばにいて", next: "quiet" },
+      { label: "厳しいね", next: "sleepy" },
+      { label: "そうだね", next: "sleepy" },
     ],
   },
-  comfort: {
-    id: "comfort",
-    reply:
-      "特別なことがなくても、甘えていいんだよ。あなたが休むあいだ、わたしがそっと見守ってるね。",
-    emotion: "tender",
+  only_visitor: {
+    id: "only_visitor",
+    reply: "ここにはあなたぐらいしか来る人がいないのよ。",
     animation: "idle",
-    voiceStyle: "soft",
+    voice: "/voice/008.wav",
     choices: [
-      { label: "少し楽になった", next: "small_smile" },
-      { label: "おやすみを言って", next: "goodnight" },
-      { label: "もう静かにする", next: "sleep_redirect" },
+      { label: "そうなんだ", next: "her_day" },
+      { label: "さみしくないの？", next: "tuck_in" },
     ],
+  },
+  sleepy: {
+    id: "sleepy",
+    reply: "ちょっと眠くなってきちゃった。",
+    animation: "idle",
+    voice: "/voice/005.wav",
+    choices: [
+      { label: "私も、眠くなってきた", next: "you_too" },
+      { label: "私はまだ眠れない。寝かしつけて？", next: "tuck_in" },
+      { label: "無理しないで。おやすみ", next: "drowsy" },
+    ],
+  },
+  you_too: {
+    id: "you_too",
+    reply: "あなたも？",
+    animation: "surprise",
+    voice: "/voice/009.wav",
+    choices: [
+      { label: "うん。寝かしつけてくれる？", next: "tuck_in" },
+      { label: "うん、一緒に休もう", next: "drowsy" },
+    ],
+  },
+  tuck_in: {
+    id: "tuck_in",
+    reply: "私が寝かしつけてあげる。",
+    animation: "idle",
+    voice: "/voice/010.wav",
+    sleepRedirect: true,
+    choices: [
+      { label: "ありがとう", next: "drowsy" },
+      { label: "うん", next: "quiet" },
+    ],
+  },
+  drowsy: {
+    id: "drowsy",
+    reply: "んー。",
+    animation: "idle",
+    voice: "/voice/011.wav",
+    sleepRedirect: true,
+    choices: [{ label: "...", next: "quiet" }],
   },
   quiet: {
     id: "quiet",
-    reply:
-      "何も聞かずに、近くにいるね。あとは音楽と夜にまかせよう。",
-    emotion: "quiet",
+    reply: "...",
     animation: "idle",
-    voiceStyle: "whisper",
-    choices: [
-      { label: "おやすみを言って", next: "goodnight" },
-      { label: "少しだけ笑って", next: "small_smile" },
-      { label: "もう休む", next: "sleep_redirect" },
-    ],
-  },
-  goodnight: {
-    id: "goodnight",
-    reply:
-      "おやすみ。眠気はゆっくり来ても大丈夫。まぶたが重くなるまで、ここにいるね。",
-    emotion: "loving",
-    animation: "idle",
-    voiceStyle: "goodnight",
-    choices: [
-      { label: "もう少しだけ", next: "comfort" },
-      { label: "もう静かにする", next: "sleep_redirect" },
-    ],
-  },
-  breathing: {
-    id: "breathing",
-    reply:
-      "やさしく吸って、ゆっくり手放して。数えなくてもいいよ。小さな波が入って、もっと静かな波が出ていく感じ。",
-    emotion: "calming",
-    animation: "idle",
-    voiceStyle: "slow",
-    choices: [
-      { label: "もう一言ほしい", next: "comfort" },
-      { label: "おやすみを言って", next: "goodnight" },
-      { label: "もう休む", next: "sleep_redirect" },
-    ],
-  },
-  small_smile: {
-    id: "small_smile",
-    reply:
-      "ふふ。少しだけ笑ったら、また静かにしようね。今は、やわらかくなっていい時間だよ。",
-    emotion: "playful",
-    animation: "laugh",
-    voiceStyle: "bright-soft",
-    choices: [
-      { label: "静かにそばにいて", next: "quiet" },
-      { label: "おやすみ", next: "sleep_redirect" },
-    ],
-  },
-  sleep_redirect: {
-    id: "sleep_redirect",
-    reply:
-      "じゃあ、もう質問はしないね。ゆっくり休んで。部屋をやさしいままにしておくよ。",
-    emotion: "sleepy",
-    animation: "idle",
-    voiceStyle: "whisper",
     sleepRedirect: true,
-    choices: [
-      { label: "最初に戻る", next: "start" },
-      { label: "もう一度おやすみ", next: "goodnight" },
-    ],
+    choices: [{ label: "もう少し話しかける", next: "check_in" }],
   },
 };
 
