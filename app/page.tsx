@@ -9,16 +9,12 @@ import type { ConversationVoice } from "@/lib/conversationVoice";
 import { useCallback, useRef, useState } from "react";
 
 const defaultBgmVolume = 0.55;
-const defaultBackgroundVisible = false;
 const defaultReflectionResolution = 128;
 
 export default function Home() {
   const [aiBusy, setAiBusy] = useState(false);
   const [bgmVolume, setBgmVolume] = useState(defaultBgmVolume);
   const voiceRef = useRef<ConversationVoice | null>(null);
-  const [backgroundVisible, setBackgroundVisible] = useState(
-    defaultBackgroundVisible,
-  );
   const [conversationAnimation, setConversationAnimation] =
     useState<ChatAnimation>("idle");
   const [conversationAnimationNonce, setConversationAnimationNonce] =
@@ -38,16 +34,13 @@ export default function Home() {
         <CharacterCanvas
           conversationBusy={aiBusy}
           voiceRef={voiceRef}
-          backgroundVisible={backgroundVisible}
           conversationAnimation={conversationAnimation}
           conversationAnimationNonce={conversationAnimationNonce}
           reflectionResolution={reflectionResolution}
         />
         <AIChatPanel onAnimationRequest={requestConversationAnimation} onBusyChange={setAiBusy} voiceRef={voiceRef} />
         <SettingsPanel
-          backgroundVisible={backgroundVisible}
           bgmVolume={bgmVolume}
-          onBackgroundVisibleChange={setBackgroundVisible}
           onBgmVolumeChange={setBgmVolume}
           onReflectionResolutionChange={setReflectionResolution}
           reflectionResolution={reflectionResolution}

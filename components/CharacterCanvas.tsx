@@ -18,7 +18,6 @@ import {
   Environment,
   MeshReflectorMaterial,
   OrbitControls,
-  useGLTF,
 } from "@react-three/drei";
 import {
   ACESFilmicToneMapping,
@@ -32,7 +31,6 @@ import type {
   DirectionalLight as ThreeDirectionalLight,
   HemisphereLight as ThreeHemisphereLight,
   Mesh as ThreeMesh,
-  Object3D,
   Points as ThreePoints,
 } from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
@@ -237,27 +235,6 @@ function SkyGradient() {
   );
 }
 
-function BackgroundModel() {
-  const { scene } = useGLTF(assetPath("/models/background.glb?v=20260615-bg-reset-2")) as {
-    scene: Object3D;
-  };
-
-  useEffect(() => {
-    scene.traverse((object) => {
-      object.frustumCulled = false;
-    });
-  }, [scene]);
-
-  return (
-    <primitive
-      object={scene}
-      position={[0, -0.2, 0]}
-      rotation={[0, 0, 0]}
-      scale={0.3}
-    />
-  );
-}
-
 function StarParticles() {
   const material = useRef<ShaderMaterial>(null);
   const points = useRef<ThreePoints>(null);
@@ -450,14 +427,12 @@ function OceanPlane({ reflectionResolution }: { reflectionResolution: number }) 
 export default function CharacterCanvas({
   conversationBusy,
   voiceRef,
-  backgroundVisible,
   conversationAnimation,
   conversationAnimationNonce,
   reflectionResolution,
 }: {
   voiceRef: RefObject<ConversationVoice | null>;
   conversationBusy: boolean;
-  backgroundVisible: boolean;
   conversationAnimation: ChatAnimation;
   conversationAnimationNonce: number;
   reflectionResolution: number;
@@ -512,7 +487,6 @@ export default function CharacterCanvas({
         />
         <Suspense fallback={null}>
           <SkyGradient />
-          {backgroundVisible ? <BackgroundModel /> : null}
           <OceanPlane reflectionResolution={reflectionResolution} />
           <ReflectionLightMask lightRef={directionalLight} />
           <StarParticles />

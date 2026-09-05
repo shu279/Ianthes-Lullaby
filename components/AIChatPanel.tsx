@@ -17,6 +17,7 @@ export default function AIChatPanel({ onAnimationRequest, onBusyChange, voiceRef
   onBusyChange: (busy: boolean) => void;
   voiceRef: RefObject<ConversationVoice | null>;
 }) {
+  const [isOpen, setIsOpen] = useState(true);
   const [history, setHistory] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [pendingUser, setPendingUser] = useState("");
@@ -27,6 +28,9 @@ export default function AIChatPanel({ onAnimationRequest, onBusyChange, voiceRef
   const request = useRef<AbortController | null>(null);
   const transcript = useRef<HTMLDivElement | null>(null);
   const followLatest = useRef(true);
+  const openButton = useRef<HTMLButtonElement | null>(null);
+  const closeButton = useRef<HTMLButtonElement | null>(null);
+  const focusOnToggle = useRef(false);
 
   useEffect(() => {
     const voice = new ConversationVoice(() => new Audio(), setVoiceStatus);
@@ -44,8 +48,19 @@ export default function AIChatPanel({ onAnimationRequest, onBusyChange, voiceRef
   }, [voiceRef]);
 
   useEffect(() => {
-    if (transcript.current && followLatest.current) transcript.current.scrollTop = transcript.current.scrollHeight;
-  }, [history, pendingUser, reply, busy]);
+    if (isOpen && transcript.current && followLatest.current) transcript.current.scrollTop = transcript.current.scrollHeight;
+  }, [history, pendingUser, reply, busy, isOpen]);
+
+  useEffect(() => {
+    if (!focusOnToggle.current) return;
+    (isOpen ? closeButton.current : openButton.current)?.focus({ preventScroll: true });
+    focusOnToggle.current = false;
+  }, [isOpen]);
+
+  function toggleChat() {
+    focusOnToggle.current = true;
+    setIsOpen(value => !value);
+  }
 
   async function send(event: FormEvent) {
     event.preventDefault();
@@ -97,40 +112,45 @@ export default function AIChatPanel({ onAnimationRequest, onBusyChange, voiceRef
   }
 
   return (
-    <section className="aiChatPanel" aria-label="AIチャット">
-      <div className="aiChatHeader">
-        <button type="button" onClick={clearHistory} disabled={busy || !history.length}>会話をリセット</button>
-      </div>
-      <div className="aiTranscript" ref={transcript} role="log" aria-label="会話履歴" aria-live="off"
-        onScroll={() => {
-          const element = transcript.current;
-          if (element) followLatest.current = element.scrollHeight - element.scrollTop - element.clientHeight < 60;
-        }}>
-        {!history.length && !pendingUser && <p className="aiWelcome"></p>}
-        {history.map((message, index) => <p className={`aiMessage ${message.role}`} key={index}>
-          <span className="aiSpeaker">{message.role === "user" ? "あなた" : "イアンセ"}</span>{message.content}
-        </p>)}
-        {pendingUser && <p className="aiMessage user"><span className="aiSpeaker">あなた</span>{pendingUser}</p>}
-        {busy && <p className="aiMessage assistant"><span className="aiSpeaker">イアンセ</span>{reply || "…"}<span className="aiCursor" aria-hidden="true">▍</span></p>}
-      </div>
-      <p className="srOnly" aria-live="polite">{busy ? "返事をしています。" : history.at(-1)?.content}</p>
-      {error && <p className="aiError" role="alert">{error}</p>}
-      {(voiceStatus === "error" || voiceStatus === "blocked") && <p className="aiNotice" role="status">
-        音声を再生できませんでした。次の送信時に再試行します。
-      </p>}
-      {!endpoint && <p className="aiNotice">AIチャットは準備中です</p>}
-      <form className="aiChatForm" onSubmit={send}>
-        <label htmlFor="ai-message" className="srOnly">メッセージ</label>
-        <textarea id="ai-message" placeholder="今の気持ちは？" rows={2} maxLength={1000}
-          value={input} disabled={!endpoint || busy} onChange={event => setInput(event.target.value)}
-          onKeyDown={event => {
-            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) {
-              event.preventDefault(); event.currentTarget.form?.requestSubmit();
-            }
-          }} />
-        {busy ? <button type="button" onClick={() => { voiceRef.current?.stopReaction(); request.current?.abort(); }}>停止</button>
-          : <button type="submit" disabled={!endpoint || !input.trim()}>送信</button>}
-      </form>
-    </section>
+    <>
+      {!isOpen && <button ref={openButton} className="aiChatToggle" type="button"
+        aria-expanded={false} aria-controls="ai-chat-panel" onClick={toggleChat}>チャットを開く</button>}
+      <section id="ai-chat-panel" className="aiChatPanel" aria-label="AIチャット" hidden={!isOpen}>
+        <div className="aiChatHeader">
+          <button type="button" onClick={clearHistory} disabled={busy || !history.length}>会話をリセット</button>
+          <button ref={closeButton} type="button" aria-label="チャットを閉じる"
+            aria-expanded={isOpen} aria-controls="ai-chat-panel" onClick={toggleChat}>閉じる</button>
+        </div>
+        <div className="aiTranscript" ref={transcript} role="log" aria-label="会話履歴" aria-live="off"
+          onScroll={() => {
+            const element = transcript.current;
+            if (element) followLatest.current = element.scrollHeight - element.scrollTop - element.clientHeight < 60;
+          }}>
+          {history.map((message, index) => <p className={`aiMessage ${message.role}`} key={index}>
+            <span className="aiSpeaker">{message.role === "user" ? "あなた" : "イアンサ"}</span>{message.content}
+          </p>)}
+          {pendingUser && <p className="aiMessage user"><span className="aiSpeaker">あなた</span>{pendingUser}</p>}
+          {busy && <p className="aiMessage assistant"><span className="aiSpeaker">イアンサ</span>{reply || "…"}<span className="aiCursor" aria-hidden="true">▍</span></p>}
+        </div>
+        <p className="srOnly" aria-live="polite">{busy ? "返事をしています。" : history.at(-1)?.content}</p>
+        {error && <p className="aiError" role="alert">{error}</p>}
+        {(voiceStatus === "error" || voiceStatus === "blocked") && <p className="aiNotice" role="status">
+          音声を再生できませんでした。次の送信時に再試行します。
+        </p>}
+        {!endpoint && <p className="aiNotice">AIチャットは準備中です</p>}
+        <form className="aiChatForm" onSubmit={send}>
+          <label htmlFor="ai-message" className="srOnly">メッセージ</label>
+          <textarea id="ai-message" rows={1} maxLength={1000}
+            value={input} disabled={!endpoint || busy} onChange={event => setInput(event.target.value)}
+            onKeyDown={event => {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+                event.preventDefault(); event.currentTarget.form?.requestSubmit();
+              }
+            }} />
+          {busy ? <button type="button" onClick={() => { voiceRef.current?.stopReaction(); request.current?.abort(); }}>停止</button>
+            : <button type="submit" disabled={!endpoint || !input.trim()}>送信</button>}
+        </form>
+      </section>
+    </>
   );
 }

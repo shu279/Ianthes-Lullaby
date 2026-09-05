@@ -5,9 +5,7 @@ import { useState } from "react";
 const reflectionOptions = [16, 32, 64, 128, 256, 512, 1024, 2048] as const;
 
 type SettingsPanelProps = {
-  backgroundVisible: boolean;
   bgmVolume: number;
-  onBackgroundVisibleChange: (visible: boolean) => void;
   onBgmVolumeChange: (volume: number) => void;
   onReflectionResolutionChange: (resolution: number) => void;
   reflectionResolution: number;
@@ -21,9 +19,7 @@ function getReflectionIndex(resolution: number) {
 }
 
 export default function SettingsPanel({
-  backgroundVisible,
   bgmVolume,
-  onBackgroundVisibleChange,
   onBgmVolumeChange,
   onReflectionResolutionChange,
   reflectionResolution,
@@ -46,20 +42,6 @@ export default function SettingsPanel({
       {isOpen ? (
         <aside className="settingsPanel" id="settings-panel" aria-label="Settings">
           <h2>Settings</h2>
-
-          <label className="settingControl">
-            <span>Background</span>
-            <strong>{backgroundVisible ? "On" : "Off"}</strong>
-            <input
-              checked={backgroundVisible}
-              className="settingCheckbox"
-              onChange={(event) =>
-                onBackgroundVisibleChange(event.target.checked)
-              }
-              type="checkbox"
-            />
-          </label>
-
           <label className="settingControl">
             <span>BGM volume</span>
             <strong>{Math.round(bgmVolume * 100)}%</strong>
