@@ -125,13 +125,13 @@ the cooldown across turns and spaces uncached requests at least three seconds
 apart. Stop cancels pending waits as well as network requests.
 
 The browser reuses exact-text audio only in page memory for five minutes,
-bounded to 16 clips and 8 MB of decoded PCM. Reset and page disposal clear it.
+bounded to 16 clips and 8 MB of decoded PCM. Page disposal clears it.
 There is no disk, localStorage, or shared server audio cache. An optional
 `VOICEVOX_API_KEY` enables the provider's faster synthesis mode; optimization
 in this app cannot change the external VOICEVOX engine or remove provider limits.
 
 Web Audio is resumed from Send. The browser computes a 50 Hz RMS mouth envelope
-from the decoded MP3 and tracks playback time. Stop, a new message, reset, page
+from the decoded MP3 and tracks playback time. Stop, a new message, page
 exit and tab hiding cancel pending synthesis, queued clips and playback; late
 results and later chunks from that canceled reply cannot start speaking. If a
 following clip fails, current playback finishes and the remaining clips are

@@ -66,7 +66,8 @@ function LimitedOrbitControls() {
     const target = current.target;
     const distance = current.object.position.distanceTo(target);
     const zoomFocus = Math.max(0, Math.min(1, (3.1 - distance) / 1.5));
-    const focusY = 1.05 + zoomFocus * 0.48;
+    // Bring the upper torso into the center as the camera zooms in.
+    const focusY = 1.05 + zoomFocus * 0.25;
     const previousX = target.x;
     const previousY = target.y;
     const previousZ = target.z;

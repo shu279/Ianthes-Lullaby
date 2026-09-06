@@ -29,6 +29,8 @@ web server to preview an export; `next start` does not serve static exports.
 The app opens directly into AI chat. It supports Japanese free-text messages,
 recent conversation history, text synchronized with each spoken line, and all eight
 installed animations. BGM volume stays unchanged.
+Zooming in centers the camera around the character's chest. The chat can be
+collapsed with Close; there is no conversation-reset button.
 
 `lib/chatAnimations.json` is the shared animation catalog: `idle`, `laugh`,
 `surprise`, `attack` (a light angry reaction), `pose`, `intro`, `sleepIn`, and
@@ -60,7 +62,7 @@ of retry delay; a longer cooldown is retained for subsequent turns. Stop also
 cancels cooldown waits. No generated audio is written to files or localStorage.
 
 The mouth follows the generated audio's measured volume and closes during
-silence. Stop, a new message, reset, leaving the page, or hiding the browser tab
+silence. Stop, a new message, leaving the page, or hiding the browser tab
 cancels playback and pending audio requests. Closing the chat panel simply
 collapses it and retains the conversation. Explicit requests such as
 「読み上げないで」 suppress speech for that reply. BGM stays at its set volume.
@@ -80,7 +82,7 @@ A Gemini API key and a deployed API URL are required for real AI replies.
 The character's `Mouth_a` shape follows the audio's volume envelope at the
 current playback position, closing during pauses and after playback. VOICEVOX
 envelopes are calculated from decoded audio at runtime. The small speech cache
-is cleared by resetting the conversation or leaving the page.
+is cleared when leaving the page.
 
 `voice/`, `public/voice/` and `public/models/background.glb` are ignored by Git.
 The original recordings and background model can remain locally, but are absent

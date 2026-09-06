@@ -102,21 +102,12 @@ export default function AIChatPanel({ onAnimationRequest, onBusyChange, voiceRef
     }
   }
 
-  function clearHistory() {
-    if (request.current) return;
-    voiceRef.current?.stop();
-    voiceRef.current?.clearCache();
-    setHistory([]);
-    setError("");
-  }
-
   return (
     <>
       {!isOpen && <button ref={openButton} className="aiChatToggle" type="button"
         aria-expanded={false} aria-controls="ai-chat-panel" onClick={toggleChat}>チャットを開く</button>}
       <section id="ai-chat-panel" className="aiChatPanel" aria-label="AIチャット" hidden={!isOpen}>
         <div className="aiChatHeader">
-          <button type="button" onClick={clearHistory} disabled={busy || !history.length}>会話をリセット</button>
           <button ref={closeButton} type="button" aria-label="チャットを閉じる"
             aria-expanded={isOpen} aria-controls="ai-chat-panel" onClick={toggleChat}>閉じる</button>
         </div>
