@@ -26,10 +26,11 @@ export default function AIChatPanel({ onAnimationRequest, onBusyChange, voiceRef
   const [voiceError, setVoiceError] = useState("");
   const speaking = voiceStatus === "loading" || voiceStatus === "playing";
   const request = useRef<AbortController | null>(null);
+  const panel = useRef<HTMLElement | null>(null);
+  const messageInput = useRef<HTMLTextAreaElement | null>(null);
   const transcript = useRef<HTMLDivElement | null>(null);
   const followLatest = useRef(true);
   const openButton = useRef<HTMLButtonElement | null>(null);
-  const closeButton = useRef<HTMLButtonElement | null>(null);
   const focusOnToggle = useRef(false);
 
   useEffect(() => {
@@ -58,13 +59,29 @@ export default function AIChatPanel({ onAnimationRequest, onBusyChange, voiceRef
 
   useEffect(() => {
     if (!focusOnToggle.current) return;
-    (isOpen ? closeButton.current : openButton.current)?.focus({ preventScroll: true });
+    const target = isOpen
+      ? (messageInput.current?.disabled ? panel.current : messageInput.current)
+      : openButton.current;
+    target?.focus({ preventScroll: true });
     focusOnToggle.current = false;
   }, [isOpen]);
 
-  function toggleChat() {
+  useEffect(() => {
+    if (!isOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (event.button !== 0 || !(event.target instanceof Node)) return;
+      if (panel.current?.contains(event.target) || openButton.current?.contains(event.target)) return;
+      // Let the clicked scene or setting receive its own pointer event and focus.
+      focusOnToggle.current = false;
+      setIsOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOutside, true);
+    return () => document.removeEventListener("pointerdown", closeOutside, true);
+  }, [isOpen]);
+
+  function openChat() {
     focusOnToggle.current = true;
-    setIsOpen(value => !value);
+    setIsOpen(true);
   }
 
   async function send(event: FormEvent) {
@@ -105,13 +122,17 @@ export default function AIChatPanel({ onAnimationRequest, onBusyChange, voiceRef
   return (
     <>
       {!isOpen && <button ref={openButton} className="aiChatToggle" type="button"
-        aria-expanded={false} aria-controls="ai-chat-panel" onClick={toggleChat}>チャットを開く</button>}
-      <section id="ai-chat-panel" className="aiChatPanel" aria-label="AIチャット" hidden={!isOpen}>
-        <div className="aiChatHeader">
-          <button ref={closeButton} type="button" aria-label="チャットを閉じる"
-            aria-expanded={isOpen} aria-controls="ai-chat-panel" onClick={toggleChat}>閉じる</button>
-        </div>
-        <div className="aiTranscript" ref={transcript} role="log" aria-label="会話履歴" aria-live="off"
+        aria-expanded={false} aria-controls="ai-chat-panel" onClick={openChat}>チャットを開く</button>}
+      <section ref={panel} id="ai-chat-panel" className="aiChatPanel" aria-label="AIチャット" hidden={!isOpen}
+        tabIndex={-1} onKeyDown={event => {
+          if (event.key === "Escape" && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+            event.preventDefault();
+            event.stopPropagation();
+            focusOnToggle.current = true;
+            setIsOpen(false);
+          }
+        }}>
+        <div className="aiTranscript" ref={transcript} role="log" aria-label="会話履歴" aria-live="off" tabIndex={0}
           onScroll={() => {
             const element = transcript.current;
             if (element) followLatest.current = element.scrollHeight - element.scrollTop - element.clientHeight < 60;
@@ -132,7 +153,7 @@ export default function AIChatPanel({ onAnimationRequest, onBusyChange, voiceRef
         {!endpoint && <p className="aiNotice">AIチャットは準備中です</p>}
         <form className="aiChatForm" onSubmit={send}>
           <label htmlFor="ai-message" className="srOnly">メッセージ</label>
-          <textarea id="ai-message" rows={1} maxLength={1000}
+          <textarea ref={messageInput} id="ai-message" rows={1} maxLength={1000}
             value={input} disabled={!endpoint || busy} onChange={event => setInput(event.target.value)}
             onKeyDown={event => {
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) {

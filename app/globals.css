@@ -284,15 +284,16 @@ textarea {
   cursor: pointer;
 }
 
-.aiChatHeader {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  font-size: 13px;
+.aiChatPanel,
+.aiTranscript,
+.aiChatForm textarea {
+  scrollbar-width: none;
 }
-.aiChatHeader button { font-size: 11px; padding: 6px; }
+.aiChatPanel::-webkit-scrollbar,
+.aiTranscript::-webkit-scrollbar,
+.aiChatForm textarea::-webkit-scrollbar {
+  display: none;
+}
 .aiTranscript { flex: 1 1 auto; overflow-y: auto; min-height: 0; padding: 2px 0; overscroll-behavior: contain; }
 .aiMessage { max-width: 95%; font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0; padding: 8px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.04); }
 .aiMessage.user { margin-left: auto; background: rgba(213, 181, 238, 0.12); }
