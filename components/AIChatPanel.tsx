@@ -72,6 +72,7 @@ export default function AIChatPanel({ onAnimationRequest, onBusyChange, voiceRef
     if (!content || request.current || !endpoint) return;
     voiceRef.current?.stop();
     voiceRef.current?.prepareReactions([]);
+    const speechQueue = voiceRef.current?.beginSpeech(speechEndpoint);
     const controller = new AbortController();
     request.current = controller;
     setBusy(true);
@@ -82,17 +83,16 @@ export default function AIChatPanel({ onAnimationRequest, onBusyChange, voiceRef
     setReply("");
     followLatest.current = true;
     const messages = recentHistory(history, content);
-    let allowSpeech = false;
     try {
       const text = await streamChat({
         endpoint, messages, signal: controller.signal,
         onText: setReply, onAnimation: onAnimationRequest,
-        speech: 'voicevox', onSpeech: enabled => { allowSpeech = enabled; },
+        speech: 'voicevox', onSpeechChunk: line => {
+          if (!controller.signal.aborted && !document.hidden) speechQueue?.enqueue(line);
+        },
       });
       setHistory([...messages, { role: "assistant", content: text }]);
-      if (allowSpeech && !controller.signal.aborted && !document.hidden) {
-        void voiceRef.current?.playSpeech(speechEndpoint, text);
-      }
+      speechQueue?.finish();
     } catch (failure) {
       voiceRef.current?.stopReaction();
       setInput(content);

@@ -56,7 +56,7 @@ test('TTS polls the existing job without requesting synthesis twice', async () =
   const waits = [];
   const response = await handleTts(request(), { text }, env, new Headers(), provider(calls, 2), async ms => waits.push(ms));
   assert.equal(response.status, 200);
-  assert.deepEqual(waits, [2500, 2500]);
+  assert.deepEqual(waits, [1000, 1000]);
   assert.equal(calls.filter(call => call.url.endsWith('/synthesis')).length, 1);
 });
 
@@ -98,7 +98,7 @@ test('TTS bounds pending jobs, cancellation, failed jobs and audio responses', a
   const calls = [];
   const pending = await handleTts(request(), { text }, env, new Headers(), provider(calls, Infinity), async () => {});
   assert.equal(pending.status, 504);
-  assert.equal(calls.length, 21);
+  assert.equal(calls.length, 41);
   const controller = new AbortController();
   const abortedCalls = [];
   const canceled = await handleTts(request({ text }, { signal: controller.signal }), { text }, env, new Headers(),

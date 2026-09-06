@@ -1,5 +1,15 @@
 export type VoiceStatus = "idle" | "loading" | "playing" | "blocked" | "error";
 export type VoiceEnvelope = { fps: number; samples: number[] };
+type SpeechQueue = {
+  endpoint: string;
+  context: AudioContext | null;
+  abort: AbortController;
+  pending: string[];
+  ready: { buffer: AudioBuffer; envelope: VoiceEnvelope }[];
+  generating: boolean;
+  finished: boolean;
+  failure?: { status: "error" | "blocked"; message?: string };
+};
 
 /** Derive lip movement from the generated audio, including its silent pauses. */
 export function speechEnvelope(buffer: AudioBuffer): VoiceEnvelope {
@@ -32,6 +42,7 @@ export class ConversationVoice {
   private reactionStart = 0;
   private buffers = new Map<string, Promise<AudioBuffer>>();
   private speechAbort: AbortController | null = null;
+  private speechQueue: SpeechQueue | null = null;
 
   mouthOpen(): number {
     if (!this.envelope) return 0;
@@ -112,6 +123,120 @@ export class ConversationVoice {
     }
   }
 
+  private async loadSpeech(context: AudioContext, endpoint: string, text: string, signal: AbortSignal) {
+    const fetcher = this.fetcher;
+    const response = await fetcher(endpoint, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }), signal: AbortSignal.any([signal, AbortSignal.timeout(70_000)]),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => null);
+      throw new Error(typeof error?.error === "string" ? error.error : "音声を生成できませんでした。");
+    }
+    if (!response.headers.get("Content-Type")?.startsWith("audio/")) throw new Error("音声を読み取れませんでした。");
+    return context.decodeAudioData(await response.arrayBuffer());
+  }
+
+  /** Accept completed lines while Gemini is still streaming; prefetch one clip ahead. */
+  beginSpeech(endpoint: string) {
+    this.stop();
+    const queue: SpeechQueue = {
+      endpoint, context: this.context, abort: new AbortController(),
+      pending: [], ready: [], generating: false, finished: false,
+    };
+    this.speechQueue = queue;
+    this.speechAbort = queue.abort;
+    return {
+      enqueue: (text: string) => {
+        if (this.speechQueue !== queue || queue.finished || !text.trim()) return;
+        queue.pending.push(text);
+        void this.fillSpeechQueue(queue);
+      },
+      finish: () => {
+        if (this.speechQueue !== queue) return;
+        queue.finished = true;
+        this.advanceSpeechQueue(queue);
+      },
+    };
+  }
+
+  private async fillSpeechQueue(queue: SpeechQueue) {
+    if (this.speechQueue !== queue || queue.generating || !queue.pending.length || queue.ready.length) return;
+    queue.generating = true;
+    if (!this.reaction) this.onStatus("loading");
+    try {
+      const ready = await this.contextReady;
+      if (this.speechQueue !== queue) return;
+      if (!ready || queue.context?.state !== "running") {
+        queue.failure = { status: "blocked" };
+        throw new Error("Playback blocked");
+      }
+      while (this.speechQueue === queue && queue.pending.length && !queue.ready.length) {
+        const buffer = await this.loadSpeech(queue.context, queue.endpoint, queue.pending.shift()!, queue.abort.signal);
+        if (this.speechQueue !== queue) return;
+        queue.ready.push({ buffer, envelope: speechEnvelope(buffer) });
+        this.advanceSpeechQueue(queue);
+      }
+    } catch (error) {
+      if (this.speechQueue !== queue) return;
+      queue.failure ??= { status: "error", message: error instanceof Error && error.name !== "TimeoutError"
+        ? error.message : "音声の準備に時間がかかっています。次の会話で再試行します。" };
+      queue.pending = [];
+      queue.ready = [];
+      queue.finished = true;
+      queue.abort.abort();
+    } finally {
+      queue.generating = false;
+      this.advanceSpeechQueue(queue);
+    }
+  }
+
+  private advanceSpeechQueue(queue: SpeechQueue) {
+    if (this.speechQueue !== queue || this.reaction) return;
+    const clip = queue.ready.shift();
+    const context = queue.context;
+    if (clip && context?.state === "running") {
+      const source = context.createBufferSource();
+      source.buffer = clip.buffer;
+      source.connect(context.destination);
+      source.onended = () => {
+        if (this.speechQueue !== queue || this.reaction !== source) return;
+        source.disconnect();
+        this.reaction = null;
+        this.envelope = undefined;
+        this.advanceSpeechQueue(queue);
+        void this.fillSpeechQueue(queue);
+      };
+      this.envelope = clip.envelope;
+      this.reactionStart = context.currentTime;
+      try { source.start(); }
+      catch {
+        source.disconnect();
+        this.stop();
+        this.onStatus("error", "音声を再生できませんでした。次の送信時に再試行します。");
+        return;
+      }
+      this.reaction = source;
+      this.onStatus("playing");
+      return;
+    }
+    if (clip) {
+      queue.failure = { status: "blocked" };
+      queue.pending = [];
+      queue.ready = [];
+      queue.finished = true;
+      queue.abort.abort();
+    }
+    if (queue.failure || (queue.finished && !queue.generating && !queue.pending.length)) {
+      this.speechQueue = null;
+      this.speechAbort = null;
+      this.envelope = undefined;
+      this.onStatus(queue.failure?.status ?? "idle", queue.failure?.message);
+    } else {
+      this.onStatus("loading");
+    }
+  }
+
   /** Full AI reply via VOICEVOX. Generated speech is never retained in the clip cache. */
   async playSpeech(endpoint: string, text: string) {
     this.stop();
@@ -125,17 +250,7 @@ export class ConversationVoice {
       const ready = await this.contextReady;
       if (request !== this.request) return;
       if (!ready || context.state !== "running") { this.onStatus("blocked"); return; }
-      const fetcher = this.fetcher;
-      const response = await fetcher(endpoint, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }), signal: AbortSignal.any([abort.signal, AbortSignal.timeout(70_000)]),
-      });
-      if (!response.ok) {
-        const error = await response.json().catch(() => null);
-        throw new Error(typeof error?.error === "string" ? error.error : "音声を生成できませんでした。");
-      }
-      if (!response.headers.get("Content-Type")?.startsWith("audio/")) throw new Error("音声を読み取れませんでした。");
-      const buffer = await context.decodeAudioData(await response.arrayBuffer());
+      const buffer = await this.loadSpeech(context, endpoint, text, abort.signal);
       if (request !== this.request) return;
       if (context.state !== "running") { this.onStatus("blocked"); return; }
       const source = context.createBufferSource();
@@ -174,6 +289,7 @@ export class ConversationVoice {
     this.request += 1;
     this.speechAbort?.abort();
     this.speechAbort = null;
+    this.speechQueue = null;
     this.envelope = undefined;
     if (this.reaction) {
       this.reaction.onended = null;

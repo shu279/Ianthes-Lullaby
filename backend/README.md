@@ -60,7 +60,7 @@ Worker's secret storage; it is not needed by GitHub Actions.
 - `stream.mjs`: parses Gemini SSE chunks and extracts the first-line animation and
   animation tag, for example `[[laugh]]`. Older recorded-voice clients can still
   use `[[laugh|chuckle]]`.
-- `tts.mjs`: requests full-reply speech from the unofficial TTS Quest VOICEVOX API,
+- `tts.mjs`: requests speech for a reply segment from the unofficial TTS Quest VOICEVOX API,
   waits for that job, and returns MP3 audio. Speaker `0` is 四国めたん（あまあま）.
 - `../lib/aiVoices.json`: shared recorded-voice catalog, including the spoken
   reactions and when they fit. Gemini picks one voice ID or `none` per reply.
@@ -88,15 +88,23 @@ Animations are restricted to the shared catalog: `idle`, `laugh`, `surprise`,
 `attack`, `pose`, `intro`, `sleepIn`, and `sleepOut`; text renders as
 plain React text. Responses appear character by character. Leaving the page or
 **停止** aborts the request. Failed/partial responses are not added to history.
-The server emits one `speech` event for VOICEVOX clients. Once the complete
-reply is displayed, the browser sends `{ "text": "…" }` to `/api/tts` if speech
-is enabled. Requests such as 「声を出さないで」「音声なし」「読み上げないで」
+The server emits one `speech` event for VOICEVOX clients. When speech is enabled,
+the browser sends each completed line or sentence as `{ "text": "…" }` to
+`/api/tts` as it arrives, independently of the typewriter display. The prompt asks
+for a short first sentence and a newline after each sentence. Newlines and
+Japanese sentence punctuation form boundaries; the final unfinished line is
+flushed only on a successful `done` event. Replies use at most six synthesis
+requests, grouping excess lines into the final request. The first clip plays
+immediately when ready. Downloads are serial, with one decoded clip prefetched
+while the current clip plays; playback stays in order without overlap. A slow
+provider can still cause initial delay or pauses between clips.
+Requests such as 「声を出さないで」「音声なし」「読み上げないで」
 set `enabled` to `false` for that reply. These clients do not play recorded
 reactions over synthesized speech. Clients that omit `speech` retain the legacy
 allowlisted `voice` event and recorded reaction behavior.
 
 `/api/tts` accepts up to 1,200 characters, fixes the voice on the server, and
-applies a separate limit of 6 synthesis requests per minute per IP/location.
+applies a separate limit of 24 synthesis requests per minute per IP/location.
 No extra key is required. Optionally set `VOICEVOX_API_KEY` as a Worker secret
 (and in the ignored `.dev.vars` locally) to use TTS Quest's free faster mode.
 Keep that key out of `NEXT_PUBLIC_` variables and Git.
@@ -107,13 +115,17 @@ it deletes them; do not assume private or permanent storage at the provider.
 
 The Worker follows only validated `audio[1-9].tts.quest` job URLs, rejects
 redirects, bounds audio size to 8 MB, and limits synthesis/polling to 60 seconds
-and at most 22 outbound requests. It honors provider rate limits without
+and at most 42 outbound requests, checking job readiness at one-second intervals.
+It honors provider rate limits without
 automatically repeating synthesis. Provider errors leave text chat usable.
 
 Web Audio is resumed from Send. The browser computes a 50 Hz RMS mouth envelope
 from the decoded MP3 and tracks playback time. Stop, a new message, reset, page
-exit and tab hiding cancel pending synthesis and playback; late results cannot
-start speaking. Automatic sleep waits until synthesis/playback has finished.
+exit and tab hiding cancel pending synthesis, queued clips and playback; late
+results and later chunks from that canceled reply cannot start speaking. If a
+following clip fails, current playback finishes and the remaining clips are
+dropped; the next user message can retry speech. Automatic sleep waits until
+synthesis/playback has finished.
 BGM volume stays unchanged. The Settings panel displays the required credit:
 **VOICEVOX:四国めたん**. See the
 [TTS Quest API](https://github.com/ts-klassen/ttsQuestV3Voicevox) and

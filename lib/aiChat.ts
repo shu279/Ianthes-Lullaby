@@ -22,7 +22,7 @@ function wait(ms: number, signal: AbortSignal) {
   });
 }
 
-export async function streamChat({ endpoint, messages, signal, onText, onAnimation, onVoice, onSpeech, speech, delay = 22, fetcher = fetch }: {
+export async function streamChat({ endpoint, messages, signal, onText, onAnimation, onVoice, onSpeech, onSpeechChunk, speech, delay = 22, fetcher = fetch }: {
   endpoint: string;
   messages: ChatMessage[];
   signal: AbortSignal;
@@ -30,6 +30,7 @@ export async function streamChat({ endpoint, messages, signal, onText, onAnimati
   onAnimation: (animation: ChatAnimation) => void;
   onVoice?: (voice: ChatVoice) => void;
   onSpeech?: (enabled: boolean) => void;
+  onSpeechChunk?: (text: string) => void;
   speech?: 'voicevox';
   delay?: number;
   fetcher?: typeof fetch;
@@ -49,14 +50,60 @@ export async function streamChat({ endpoint, messages, signal, onText, onAnimati
   const decoder = new TextDecoder();
   let buffer = "";
   let reply = "";
+  let receivedReply = "";
+  let typing = Promise.resolve();
+  const displayAbort = new AbortController();
+  const activeSignal = AbortSignal.any([signal, displayAbort.signal]);
+  const cancelReader = () => { void reader.cancel().catch(() => {}); };
+  activeSignal.addEventListener("abort", cancelReader, { once: true });
   let done = false;
   let voice: ChatVoice | undefined;
   let voiceStarted = false;
   let speechReceived = false;
+  let speechEnabled = false;
+  let speechBuffer = "";
+  let speechChunks = 0;
+  function emitSpeech(text: string) {
+    const content = text.trim();
+    if (!content || !/[\p{L}\p{N}]/u.test(content)) return;
+    activeSignal.throwIfAborted();
+    speechChunks++;
+    onSpeechChunk?.(content);
+  }
+  function collectSpeech(text: string) {
+    if (!speechEnabled || !onSpeechChunk) return;
+    speechBuffer += text;
+    // Keep at most six requests per reply; unusually fragmented tails are grouped.
+    while (speechChunks < 5) {
+      const boundary = /[。！？!?\n]+[」』）】”’"]*/u.exec(speechBuffer);
+      if (!boundary) break;
+      const end = boundary.index + boundary[0].length;
+      const content = speechBuffer.slice(0, end);
+      speechBuffer = speechBuffer.slice(end);
+      emitSpeech(content);
+    }
+  }
+  function displayText(text: string) {
+    // Reading the network must not wait for the character-by-character display.
+    typing = typing.then(async () => {
+      for (const character of Array.from(text)) {
+        activeSignal.throwIfAborted();
+        reply += character;
+        onText(reply);
+        activeSignal.throwIfAborted();
+        if (!voiceStarted && reply.trim()) {
+          voiceStarted = true;
+          if (voice) onVoice?.(voice);
+        }
+        if (delay) await wait(delay, activeSignal);
+      }
+    }).catch(error => { displayAbort.abort(error); });
+  }
   try {
     while (!done) {
-      signal.throwIfAborted();
+      activeSignal.throwIfAborted();
       const chunk = await reader.read();
+      activeSignal.throwIfAborted();
       buffer += chunk.done ? decoder.decode() : decoder.decode(chunk.value, { stream: true });
       if (buffer.length > 20_000) throw new Error("AIの応答が長すぎます。");
       if (chunk.done && buffer.trim()) buffer += "\n";
@@ -65,38 +112,38 @@ export async function streamChat({ endpoint, messages, signal, onText, onAnimati
         const line = buffer.slice(0, end).trim();
         buffer = buffer.slice(end + 1);
         if (!line) continue;
-        signal.throwIfAborted();
+        activeSignal.throwIfAborted();
         const event = JSON.parse(line);
-        if (event.type === "speech" && !speechReceived && !reply && typeof event.enabled === "boolean") {
+        if (event.type === "speech" && !speechReceived && !receivedReply && typeof event.enabled === "boolean") {
           speechReceived = true;
+          speechEnabled = event.enabled;
           onSpeech?.(event.enabled);
         } else if (event.type === "animation" && typeof event.animation === "string" && Object.hasOwn(chatAnimations, event.animation)) {
           onAnimation(event.animation as ChatAnimation);
-        } else if (event.type === "voice" && !voiceStarted && !voice && typeof event.voice === "string" && Object.hasOwn(aiVoices, event.voice)) {
+        } else if (event.type === "voice" && !receivedReply.trim() && !voice && typeof event.voice === "string" && Object.hasOwn(aiVoices, event.voice)) {
           voice = event.voice as ChatVoice;
         } else if (event.type === "text" && typeof event.text === "string") {
-          for (const character of Array.from(event.text)) {
-            signal.throwIfAborted();
-            reply += character;
-            if (reply.length > 1200) throw new Error("AIの応答が長すぎます。");
-            onText(reply);
-            if (!voiceStarted && reply.trim()) {
-              voiceStarted = true;
-              signal.throwIfAborted();
-              if (voice) onVoice?.(voice);
-            }
-            if (delay) await wait(delay, signal);
-          }
+          if (receivedReply.length + event.text.length > 1200) throw new Error("AIの応答が長すぎます。");
+          receivedReply += event.text;
+          // Start synthesis as soon as a complete line arrives, ahead of the typewriter.
+          collectSpeech(event.text);
+          displayText(event.text);
         } else if (event.type === "error") {
           throw new Error(typeof event.message === "string" ? event.message : "返事が途中で止まりました。");
         } else if (event.type === "done") { done = true; break; }
       }
       if (chunk.done) break;
     }
-    if (!done || !reply.trim()) throw new Error("返事が途中で止まりました。もう一度お試しください。");
+    if (!done || !receivedReply.trim()) throw new Error("返事が途中で止まりました。もう一度お試しください。");
+    if (speechEnabled && onSpeechChunk) emitSpeech(speechBuffer);
+    await typing;
+    activeSignal.throwIfAborted();
     return reply;
   } finally {
+    displayAbort.abort();
+    activeSignal.removeEventListener("abort", cancelReader);
     await reader.cancel().catch(() => {});
+    await typing;
     reader.releaseLock();
   }
 }

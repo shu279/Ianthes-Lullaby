@@ -18,7 +18,7 @@
     {
       "name": "TTS_LIMITER",
       "namespace_id": "2791002",
-      "simple": { "limit": 6, "period": 60 }
+      "simple": { "limit": 24, "period": 60 }
     }
   ],
   "observability": { "enabled": false }

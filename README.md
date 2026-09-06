@@ -38,11 +38,15 @@ the final pose; the next message plays the waking clip before its reaction.
 Repeated reactions restart, and requests during waking keep only the latest
 reaction. The opening camera move runs only at startup.
 
-Completed AI replies are read aloud with **VOICEVOX:四国めたん（あまあま）**.
-The browser prepares Web Audio on Send, then requests `POST /api/tts` from the
-Cloudflare Worker. The Worker uses the free, unofficial
+AI replies are read aloud line by line with **VOICEVOX:四国めたん（あまあま）**.
+The browser prepares Web Audio on Send and starts `POST /api/tts` as soon as a
+complete line or sentence arrives, independently of the character-by-character
+display. The first clip plays as soon as it is ready; one following clip is
+prepared during playback and played in order. Replies use at most six synthesis
+requests, grouping additional lines into the last clip. The Cloudflare Worker uses the free, unofficial
 [TTS Quest API](https://github.com/ts-klassen/ttsQuestV3Voicevox); no VOICEVOX
-installation or extra API key is required. Generation can take a few seconds,
+installation or extra API key is required. Generation can still take a few seconds
+and cause pauses between clips,
 and shared-service limits may make speech temporarily unavailable. Text chat
 continues if audio fails. Only the reply text is sent to the speech provider.
 

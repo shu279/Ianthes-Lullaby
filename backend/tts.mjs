@@ -82,8 +82,8 @@ export async function handleTts(request, body, env, headers, fetcher = fetch, pa
     }
     if (!synthesis.ok || !job.success) throw new Error('Synthesis unavailable');
     const urls = jobURLs(job.audioStatusUrl);
-    // At most 22 subrequests, including synthesis and audio, within Workers Free limits.
-    for (let attempt = 0; attempt < 20; attempt++) {
+    // At most 42 subrequests, including synthesis and audio, within Workers Free limits.
+    for (let attempt = 0; attempt < 40; attempt++) {
       signal.throwIfAborted();
       const response = await fetcher(urls.status, { signal, redirect: 'manual' });
       const status = await readJSON(response);
@@ -100,7 +100,7 @@ export async function handleTts(request, body, env, headers, fetcher = fetch, pa
         headers.set('X-Content-Type-Options', 'nosniff');
         return new Response(bytes, { headers });
       }
-      await pause(2500, signal);
+      await pause(1000, signal);
     }
     return fail(504, '音声の準備に時間がかかっています。次の会話で再試行します。');
   } catch {
