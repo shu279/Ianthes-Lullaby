@@ -207,3 +207,28 @@ test('history stays bounded and retains complete user/assistant pairs', () => {
   assert.equal(result.at(-1).content, 'もう寝る');
   assert.ok(result.length <= 17);
 });
+
+test('VOICEVOX mode reads the full reply without recorded reactions and honors silent requests', async () => {
+  for (const [content, allowed] of [['おやすみ', true], ['読み上げないで', false], ['声を出さないで', false]]) {
+    const messages = [{ role: 'user', content }];
+    let prompt;
+    const response = await handleChat(request(messages, { body: JSON.stringify({ messages, speech: 'voicevox' }) }), env, async (url, init) => {
+      prompt = JSON.parse(init.body).systemInstruction.parts[0].text;
+      return success();
+    });
+    const speech = [];
+    const voices = [];
+    const reply = await streamChat({ endpoint: '/api/chat', messages, speech: 'voicevox', signal: new AbortController().signal,
+      delay: 0, onText() {}, onAnimation() {}, onSpeech: value => speech.push(value), onVoice: value => voices.push(value),
+      fetcher: async (url, init) => {
+        assert.equal(JSON.parse(init.body).speech, 'voicevox');
+        return response;
+      } });
+    assert.deepEqual(speech, [allowed]);
+    assert.deepEqual(voices, []);
+    assert.equal(reply, 'ふふ。🌙ゆっくり休んでね。');
+    assert.ok(prompt.includes('台詞全体が音声で読み上げられます'));
+    assert.ok(!prompt.includes('短い録音'));
+    assert.ok(prompt.includes('一人称は「うち」'));
+  }
+});

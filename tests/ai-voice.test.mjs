@@ -6,7 +6,7 @@ import aiVoices from '../lib/aiVoices.json' with { type: 'json' };
 
 const source = await readFile(new URL('../lib/conversationVoice.ts', import.meta.url), 'utf8');
 const { outputText } = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } });
-const { ConversationVoice } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
+const { ConversationVoice, speechEnvelope } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
 const envelope = { fps: 50, samples: [0, 0.8, 0, 0] };
 
 function deferred() {
@@ -149,4 +149,69 @@ test('an unavailable or blocked audio context remains silent without rejecting t
   player.prepareReactions([]);
   await player.playReaction('/voice/ai/hmm.wav', envelope);
   assert.equal(sources.length, 0);
+});
+
+function speechBuffer() {
+  const pcm = new Float32Array(80);
+  pcm.fill(0.25, 20, 40);
+  return { duration: 0.08, sampleRate: 1000, length: pcm.length, numberOfChannels: 1, getChannelData: () => pcm };
+}
+
+test('generated speech uses the audio clock and closes the mouth during actual silence', async () => {
+  const calls = [];
+  const { player, context, sources } = fixture(async (url, init) => {
+    calls.push({ url, init });
+    return new Response(new Uint8Array([1]), { headers: { 'Content-Type': 'audio/mpeg' } });
+  });
+  context.decodeAudioData = async () => speechBuffer();
+  player.prepareReactions([]);
+  assert.deepEqual(speechEnvelope(speechBuffer()), { fps: 50, samples: [0, 0.85, 0, 0] });
+  await player.playSpeech('/api/tts', 'ふふ、こんばんは。');
+  assert.equal(calls[0].init.method, 'POST');
+  assert.deepEqual(JSON.parse(calls[0].init.body), { text: 'ふふ、こんばんは。' });
+  context.currentTime = 0.02;
+  assert.equal(player.mouthOpen(), 0.85);
+  context.currentTime = 0.04;
+  assert.equal(player.mouthOpen(), 0);
+  await player.playSpeech('/api/tts', '次のお話。');
+  assert.ok(sources[0].stopped && sources[0].disconnected);
+  assert.equal(calls.length, 2, 'generated replies must not reuse a cached audio buffer');
+  sources[1].onended();
+  assert.equal(player.mouthOpen(), 0);
+  player.dispose();
+});
+
+test('stopping speech aborts synthesis and a late result cannot play over a newer turn', async () => {
+  const pending = deferred();
+  let signal;
+  const { player, context, sources, statuses } = fixture((url, init) => { signal = init.signal; return pending.promise; });
+  context.decodeAudioData = async () => speechBuffer();
+  player.prepareReactions([]);
+  const playing = player.playSpeech('/api/tts', '遅い返事');
+  await new Promise(resolve => setImmediate(resolve));
+  player.stop();
+  assert.ok(signal.aborted);
+  pending.resolve(new Response(new Uint8Array([1]), { headers: { 'Content-Type': 'audio/mpeg' } }));
+  await playing;
+  assert.equal(sources.length, 0);
+  assert.equal(statuses.at(-1), 'idle');
+});
+
+test('speech failures are recoverable and a blocked player does not request synthesis', async () => {
+  let calls = 0;
+  const { player, context, statuses } = fixture(async () => ++calls === 1
+    ? Response.json({ error: '混み合っています。' }, { status: 429 })
+    : new Response(new Uint8Array([1]), { headers: { 'Content-Type': 'audio/mpeg' } }));
+  context.decodeAudioData = async () => speechBuffer();
+  player.prepareReactions([]);
+  await player.playSpeech('/api/tts', 'こんばんは。');
+  assert.equal(statuses.at(-1), 'error');
+  await player.playSpeech('/api/tts', 'こんばんは。');
+  assert.equal(statuses.at(-1), 'playing');
+  player.stop();
+  context.resume = () => Promise.reject(new Error('Blocked'));
+  player.prepareReactions([]);
+  await player.playSpeech('/api/tts', 'こんばんは。');
+  assert.equal(statuses.at(-1), 'blocked');
+  assert.equal(calls, 2);
 });

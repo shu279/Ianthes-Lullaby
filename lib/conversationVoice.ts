@@ -1,6 +1,26 @@
 export type VoiceStatus = "idle" | "loading" | "playing" | "blocked" | "error";
 export type VoiceEnvelope = { fps: number; samples: number[] };
 
+/** Derive lip movement from the generated audio, including its silent pauses. */
+export function speechEnvelope(buffer: AudioBuffer): VoiceEnvelope {
+  const fps = 50;
+  const channels = Array.from({ length: buffer.numberOfChannels }, (_, index) => buffer.getChannelData(index));
+  const samples = [];
+  let peak = 0.06;
+  for (let frame = 0; frame < Math.ceil(buffer.duration * fps); frame++) {
+    const start = Math.floor(frame * buffer.sampleRate / fps);
+    const end = Math.min(buffer.length, Math.floor((frame + 1) * buffer.sampleRate / fps));
+    let energy = 0;
+    for (const channel of channels) {
+      for (let index = start; index < end; index++) energy += channel[index] ** 2;
+    }
+    const rms = Math.sqrt(energy / Math.max(1, (end - start) * channels.length));
+    peak = Math.max(peak, rms);
+    samples.push(rms);
+  }
+  return { fps, samples: samples.map(rms => rms < 0.008 ? 0 : Math.min(0.85, rms / peak * 0.85)) };
+}
+
 /** One active clip at a time, including rapid choices and pending play promises. */
 export class ConversationVoice {
   private audio: HTMLAudioElement | null = null;
@@ -11,6 +31,7 @@ export class ConversationVoice {
   private reaction: AudioBufferSourceNode | null = null;
   private reactionStart = 0;
   private buffers = new Map<string, Promise<AudioBuffer>>();
+  private speechAbort: AbortController | null = null;
 
   mouthOpen(): number {
     if (!this.envelope) return 0;
@@ -31,7 +52,7 @@ export class ConversationVoice {
 
   constructor(
     private readonly createAudio: () => HTMLAudioElement,
-    private readonly onStatus: (status: VoiceStatus) => void,
+    private readonly onStatus: (status: VoiceStatus, message?: string) => void,
     private readonly createContext: () => AudioContext = () => new AudioContext(),
     private readonly fetcher: typeof fetch = fetch,
   ) {}
@@ -91,6 +112,52 @@ export class ConversationVoice {
     }
   }
 
+  /** Full AI reply via VOICEVOX. Generated speech is never retained in the clip cache. */
+  async playSpeech(endpoint: string, text: string) {
+    this.stop();
+    const request = this.request;
+    const context = this.context;
+    if (!context) { this.onStatus("blocked"); return; }
+    const abort = new AbortController();
+    this.speechAbort = abort;
+    this.onStatus("loading");
+    try {
+      const ready = await this.contextReady;
+      if (request !== this.request) return;
+      if (!ready || context.state !== "running") { this.onStatus("blocked"); return; }
+      const fetcher = this.fetcher;
+      const response = await fetcher(endpoint, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }), signal: AbortSignal.any([abort.signal, AbortSignal.timeout(70_000)]),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => null);
+        throw new Error(typeof error?.error === "string" ? error.error : "音声を生成できませんでした。");
+      }
+      if (!response.headers.get("Content-Type")?.startsWith("audio/")) throw new Error("音声を読み取れませんでした。");
+      const buffer = await context.decodeAudioData(await response.arrayBuffer());
+      if (request !== this.request) return;
+      if (context.state !== "running") { this.onStatus("blocked"); return; }
+      const source = context.createBufferSource();
+      source.buffer = buffer;
+      source.connect(context.destination);
+      source.onended = () => { if (request === this.request) this.stop(); };
+      this.envelope = speechEnvelope(buffer);
+      this.reactionStart = context.currentTime;
+      try { source.start(); }
+      catch (error) { source.disconnect(); throw error; }
+      this.reaction = source;
+      this.onStatus("playing");
+    } catch (error) {
+      if (request !== this.request) return;
+      this.stop();
+      this.onStatus("error", error instanceof Error && error.name !== "TimeoutError"
+        ? error.message : "音声の準備に時間がかかっています。次の会話で再試行します。");
+    } finally {
+      if (this.speechAbort === abort) this.speechAbort = null;
+    }
+  }
+
   dispose() {
     this.stop();
     if (this.context) void this.context.close().catch(() => {});
@@ -105,6 +172,8 @@ export class ConversationVoice {
 
   stop() {
     this.request += 1;
+    this.speechAbort?.abort();
+    this.speechAbort = null;
     this.envelope = undefined;
     if (this.reaction) {
       this.reaction.onended = null;

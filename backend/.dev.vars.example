@@ -1,2 +1,4 @@
 # Copy to .dev.vars and set the key locally. Never commit the actual key.
 GEMINI_API_KEY=
+# Optional: a free TTS Quest VOICEVOX key enables faster synthesis. Keyless works too.
+VOICEVOX_API_KEY=

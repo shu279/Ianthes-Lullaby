@@ -14,6 +14,11 @@
       "name": "CHAT_LIMITER",
       "namespace_id": "2791001",
       "simple": { "limit": 10, "period": 60 }
+    },
+    {
+      "name": "TTS_LIMITER",
+      "namespace_id": "2791002",
+      "simple": { "limit": 6, "period": 60 }
     }
   ],
   "observability": { "enabled": false }

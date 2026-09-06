@@ -1,7 +1,7 @@
 # AI chat backend
 
 The existing GitHub Pages app stays a static site. This Worker serves
-`POST /api/chat` at https://ianthe-chat-api.ianthe-chat-api.workers.dev/api/chat.
+`POST /api/chat` and `POST /api/tts` at https://ianthe-chat-api.ianthe-chat-api.workers.dev.
 The GitHub Pages workflow uses this public URL by default; repository variable
 `CHAT_API_URL` can override it. No Gemini
 key is compiled into the browser, and the backend does not persist chat history.
@@ -58,7 +58,10 @@ Worker's secret storage; it is not needed by GitHub Actions.
 - `chat.mjs`: validates history, adds the server-owned system prompt, sends a Gemini
   streaming request, and returns newline-delimited JSON events.
 - `stream.mjs`: parses Gemini SSE chunks and extracts the first-line animation and
-  voice tag, for example `[[laugh|chuckle]]`. Legacy `[[idle]]` tags still work.
+  animation tag, for example `[[laugh]]`. Older recorded-voice clients can still
+  use `[[laugh|chuckle]]`.
+- `tts.mjs`: requests full-reply speech from the unofficial TTS Quest VOICEVOX API,
+  waits for that job, and returns MP3 audio. Speaker `0` is 四国めたん（あまあま）.
 - `../lib/aiVoices.json`: shared recorded-voice catalog, including the spoken
   reactions and when they fit. Gemini picks one voice ID or `none` per reply.
   Changes to this catalog require both frontend and backend deployment.
@@ -67,7 +70,7 @@ Worker's secret storage; it is not needed by GitHub Actions.
 - `GEMINI_MODEL`: defaults to `gemini-3.5-flash-lite`; change it in the Worker vars
   if needed for your account. The endpoint is Gemini's `streamGenerateContent` API.
 
-The browser sends `{ "messages": [{ "role": "user", "content": "眠れない" }] }`.
+The browser sends `{ "messages": [{ "role": "user", "content": "眠れない" }], "speech": "voicevox" }`.
 Only alternating `user`/`assistant` messages are accepted, ending with `user`.
 At most eight prior turns plus the new message, 8,000 characters total, are sent.
 Provider roles, prompts, URLs, or model IDs cannot be supplied by the browser.
@@ -76,7 +79,7 @@ Response events are NDJSON, for example:
 
 ```jsonl
 {"type":"animation","animation":"idle"}
-{"type":"voice","voice":"hmm"}
+{"type":"speech","enabled":true}
 {"type":"text","text":"んー。今夜は、ゆっくり休みましょう。"}
 {"type":"done"}
 ```
@@ -85,14 +88,36 @@ Animations are restricted to the shared catalog: `idle`, `laugh`, `surprise`,
 `attack`, `pose`, `intro`, `sleepIn`, and `sleepOut`; text renders as
 plain React text. Responses appear character by character. Leaving the page or
 **停止** aborts the request. Failed/partial responses are not added to history.
-The optional `voice` event names an allowlisted recording, never an arbitrary
-URL. The browser starts it once, when the first reply text appears, using audio
-prepared from the Send gesture. Short recordings have mouth envelopes; the rest
-of the AI reply remains text. Stop, errors, page exit and page hiding cancel
-playback. BGM volume stays unchanged. The former branching voice UI is no longer
-displayed; AI chat owns audio setup and cleanup.
-Explicit requests such as 「声を出さないで」 or 「音声なし」 suppress the voice
-event for that reply even if the provider selects a recording.
+The server emits one `speech` event for VOICEVOX clients. Once the complete
+reply is displayed, the browser sends `{ "text": "…" }` to `/api/tts` if speech
+is enabled. Requests such as 「声を出さないで」「音声なし」「読み上げないで」
+set `enabled` to `false` for that reply. These clients do not play recorded
+reactions over synthesized speech. Clients that omit `speech` retain the legacy
+allowlisted `voice` event and recorded reaction behavior.
+
+`/api/tts` accepts up to 1,200 characters, fixes the voice on the server, and
+applies a separate limit of 6 synthesis requests per minute per IP/location.
+No extra key is required. Optionally set `VOICEVOX_API_KEY` as a Worker secret
+(and in the ignored `.dev.vars` locally) to use TTS Quest's free faster mode.
+Keep that key out of `NEXT_PUBLIC_` variables and Git.
+Only the reply text is sent to TTS Quest; Gemini credentials and chat history
+are never forwarded. Generated audio is returned with `Cache-Control: no-store`.
+The provider generates downloadable audio URLs that may remain available until
+it deletes them; do not assume private or permanent storage at the provider.
+
+The Worker follows only validated `audio[1-9].tts.quest` job URLs, rejects
+redirects, bounds audio size to 8 MB, and limits synthesis/polling to 60 seconds
+and at most 22 outbound requests. It honors provider rate limits without
+automatically repeating synthesis. Provider errors leave text chat usable.
+
+Web Audio is resumed from Send. The browser computes a 50 Hz RMS mouth envelope
+from the decoded MP3 and tracks playback time. Stop, a new message, reset, page
+exit and tab hiding cancel pending synthesis and playback; late results cannot
+start speaking. Automatic sleep waits until synthesis/playback has finished.
+BGM volume stays unchanged. The Settings panel displays the required credit:
+**VOICEVOX:四国めたん**. See the
+[TTS Quest API](https://github.com/ts-klassen/ttsQuestV3Voicevox) and
+[voice-library terms](https://zunko.jp/con_ongen_kiyaku.html).
 The browser routes sleep/wake transitions and returns one-shot reactions to
 idle on animation completion. The model selects a reaction ID; it cannot set
 animation URLs, control BGM, or change the camera.

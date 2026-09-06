@@ -1,5 +1,6 @@
 import { buildSystemPrompt, requestsSilentVoice } from './persona.mjs';
 import { readSSE, ReplyParser } from './stream.mjs';
+import { handleTts } from './tts.mjs';
 
 const encoder = new TextEncoder();
 const MAX_BODY = 32_000;
@@ -49,12 +50,16 @@ export async function handleChat(request, env, fetcher = fetch) {
   headers.set('Access-Control-Allow-Origin', origin);
   headers.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
   headers.set('Access-Control-Allow-Headers', 'Content-Type');
-  if (new URL(request.url).pathname !== '/api/chat') return fail(404, 'Not found');
+  const path = new URL(request.url).pathname;
+  if (path !== '/api/chat' && path !== '/api/tts') return fail(404, 'Not found');
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
   if (request.method !== 'POST') return fail(405, 'POST required');
   if (!request.headers.get('Content-Type')?.startsWith('application/json')) return fail(415, 'JSON required');
   if (Number(request.headers.get('Content-Length')) > MAX_BODY) return fail(413, 'メッセージが長すぎます。');
-  const messages = validateMessages(await readBody(request));
+  const body = await readBody(request);
+  if (path === '/api/tts') return handleTts(request, body, env, headers, fetcher);
+  const messages = validateMessages(body);
+  const useTts = body?.speech === 'voicevox';
   if (!messages) return fail(400, 'メッセージを短くして、もう一度お試しください。');
   if (!env.GEMINI_API_KEY) return fail(503, 'AIチャットは準備中です。しばらくしてからお試しください。');
   if (env.CHAT_LIMITER) {
@@ -76,7 +81,7 @@ export async function handleChat(request, env, fetcher = fetch) {
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
       signal: abort.signal,
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: buildSystemPrompt(messages.at(-1).content, env.ENABLE_RAG !== 'false') }] },
+        systemInstruction: { parts: [{ text: buildSystemPrompt(messages.at(-1).content, env.ENABLE_RAG !== 'false', useTts) }] },
         contents: messages.map(message => ({ role: message.role === 'assistant' ? 'model' : 'user', parts: [{ text: message.content }] })),
         generationConfig: { temperature: 0.8, maxOutputTokens: 512 },
       }),
@@ -109,8 +114,10 @@ export async function handleChat(request, env, fetcher = fetch) {
         }
         controller.enqueue(encoder.encode(JSON.stringify(event) + '\n'));
       };
-      const parser = new ReplyParser(emit, { allowVoice: !requestsSilentVoice(messages.at(-1).content) });
+      const allowSpeech = !requestsSilentVoice(messages.at(-1).content);
+      const parser = new ReplyParser(emit, { allowVoice: !useTts && allowSpeech });
       try {
+        if (useTts) emit({ type: 'speech', enabled: allowSpeech });
         for await (const data of readSSE(upstream.body)) {
           if (data === '[DONE]') continue;
           const chunk = JSON.parse(data);

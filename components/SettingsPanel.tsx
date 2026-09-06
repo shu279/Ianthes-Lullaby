@@ -71,6 +71,7 @@ export default function SettingsPanel({
               value={reflectionIndex}
             />
           </label>
+          <p className="voiceCredit">音声：<a href="https://voicevox.hiroshiba.jp/product/shikoku_metan/" target="_blank" rel="noreferrer">VOICEVOX:四国めたん</a>（あまあま）</p>
         </aside>
       ) : null}
     </div>

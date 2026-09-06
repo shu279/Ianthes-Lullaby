@@ -22,19 +22,21 @@ function wait(ms: number, signal: AbortSignal) {
   });
 }
 
-export async function streamChat({ endpoint, messages, signal, onText, onAnimation, onVoice, delay = 22, fetcher = fetch }: {
+export async function streamChat({ endpoint, messages, signal, onText, onAnimation, onVoice, onSpeech, speech, delay = 22, fetcher = fetch }: {
   endpoint: string;
   messages: ChatMessage[];
   signal: AbortSignal;
   onText: (text: string) => void;
   onAnimation: (animation: ChatAnimation) => void;
   onVoice?: (voice: ChatVoice) => void;
+  onSpeech?: (enabled: boolean) => void;
+  speech?: 'voicevox';
   delay?: number;
   fetcher?: typeof fetch;
 }): Promise<string> {
   const response = await fetcher(endpoint, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages }), signal,
+    body: JSON.stringify({ messages, ...(speech ? { speech } : {}) }), signal,
   });
   if (!response.ok) {
     const error = await response.json().catch(() => null);
@@ -50,6 +52,7 @@ export async function streamChat({ endpoint, messages, signal, onText, onAnimati
   let done = false;
   let voice: ChatVoice | undefined;
   let voiceStarted = false;
+  let speechReceived = false;
   try {
     while (!done) {
       signal.throwIfAborted();
@@ -64,7 +67,10 @@ export async function streamChat({ endpoint, messages, signal, onText, onAnimati
         if (!line) continue;
         signal.throwIfAborted();
         const event = JSON.parse(line);
-        if (event.type === "animation" && typeof event.animation === "string" && Object.hasOwn(chatAnimations, event.animation)) {
+        if (event.type === "speech" && !speechReceived && !reply && typeof event.enabled === "boolean") {
+          speechReceived = true;
+          onSpeech?.(event.enabled);
+        } else if (event.type === "animation" && typeof event.animation === "string" && Object.hasOwn(chatAnimations, event.animation)) {
           onAnimation(event.animation as ChatAnimation);
         } else if (event.type === "voice" && !voiceStarted && !voice && typeof event.voice === "string" && Object.hasOwn(aiVoices, event.voice)) {
           voice = event.voice as ChatVoice;
