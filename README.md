@@ -27,7 +27,7 @@ web server to preview an export; `next start` does not serve static exports.
 ## AI mode
 
 The app opens directly into AI chat. It supports Japanese free-text messages,
-recent conversation history, character-by-character streaming, and all eight
+recent conversation history, text synchronized with each spoken line, and all eight
 installed animations. BGM volume stays unchanged.
 
 `lib/chatAnimations.json` is the shared animation catalog: `idle`, `laugh`,
@@ -40,15 +40,24 @@ reaction. The opening camera move runs only at startup.
 
 AI replies are read aloud line by line with **VOICEVOX:四国めたん（あまあま）**.
 The browser prepares Web Audio on Send and starts `POST /api/tts` as soon as a
-complete line or sentence arrives, independently of the character-by-character
-display. The first clip plays as soon as it is ready; one following clip is
-prepared during playback and played in order. Replies use at most six synthesis
-requests, grouping additional lines into the last clip. The Cloudflare Worker uses the free, unofficial
+complete line arrives. Each line becomes visible when its audio starts playing;
+later lines stay hidden until their own turn. The waiting indicator is `...`.
+The first clip plays as soon as it is ready; one following clip is prepared
+during playback and played in order. The prompt asks for two or three short
+lines and keeps short interjections on the same line. Punctuation alone does
+not create extra requests. Unusually long replies are limited to six segments.
+The Cloudflare Worker uses the free, unofficial
 [TTS Quest API](https://github.com/ts-klassen/ttsQuestV3Voicevox); no VOICEVOX
 installation or extra API key is required. Generation can still take a few seconds
 and cause pauses between clips,
 and shared-service limits may make speech temporarily unavailable. Text chat
 continues if audio fails. Only the reply text is sent to the speech provider.
+
+Identical lines reuse a bounded, five-minute in-memory audio cache (up to 16
+clips and 8 MB). New requests are spaced at least three seconds apart. A 429
+response waits for `Retry-After` before retrying once, with at most 60 seconds
+of retry delay; a longer cooldown is retained for subsequent turns. Stop also
+cancels cooldown waits. No generated audio is written to files or localStorage.
 
 The mouth follows the generated audio's measured volume and closes during
 silence. Stop, a new message, reset, leaving the page, or hiding the browser tab
@@ -70,8 +79,8 @@ A Gemini API key and a deployed API URL are required for real AI replies.
 
 The character's `Mouth_a` shape follows the audio's volume envelope at the
 current playback position, closing during pauses and after playback. VOICEVOX
-envelopes are calculated from decoded audio at runtime; generated clips are not
-retained after playback.
+envelopes are calculated from decoded audio at runtime. The small speech cache
+is cleared by resetting the conversation or leaving the page.
 
 `voice/`, `public/voice/` and `public/models/background.glb` are ignored by Git.
 The original recordings and background model can remain locally, but are absent

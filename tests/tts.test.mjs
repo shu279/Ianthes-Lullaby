@@ -32,7 +32,10 @@ test('TTS checks origin, preflight, input and rate limits without requiring a Ge
     assert.equal((await handleChat(request(body), env, noFetch)).status, 400);
   }
   const limited = { ...env, TTS_LIMITER: { limit: async () => ({ success: false }) } };
-  assert.equal((await handleChat(request(), limited, noFetch)).status, 429);
+  const throttled = await handleChat(request(), limited, noFetch);
+  assert.equal(throttled.status, 429);
+  assert.equal(throttled.headers.get('Retry-After'), '60');
+  assert.equal(throttled.headers.get('Access-Control-Expose-Headers'), 'Retry-After');
   assert.equal((await handleChat(request(), env, provider([]))).status, 200);
 });
 

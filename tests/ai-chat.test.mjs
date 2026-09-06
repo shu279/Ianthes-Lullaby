@@ -221,7 +221,7 @@ test('VOICEVOX mode reads reply sentences without recorded reactions and honors 
         return response;
       } });
     assert.deepEqual(speech, [allowed]);
-    assert.deepEqual(spoken, allowed ? ['ふふ。', '🌙ゆっくり休んでね。'] : []);
+    assert.deepEqual(spoken, allowed ? ['ふふ。🌙ゆっくり休んでね。'] : []);
     assert.equal(reply, 'ふふ。🌙ゆっくり休んでね。');
     assert.ok(prompt.includes('台詞全体が音声で読み上げられます'));
     assert.ok(!prompt.includes('短い録音'));
@@ -279,7 +279,7 @@ test('speech preserves Japanese text across byte boundaries and groups excess li
 
 test('failed or canceled streams discard unfinished speech and stop the typewriter', async () => {
   for (const ending of [null, { type: 'error', message: '途中で中断' }]) {
-    const events = [{ type: 'speech', enabled: true }, { type: 'text', text: 'こんばんは。まだ途中' }, ...(ending ? [ending] : [])];
+    const events = [{ type: 'speech', enabled: true }, { type: 'text', text: 'こんばんは。\nまだ途中' }, ...(ending ? [ending] : [])];
     const spoken = [];
     const displayed = [];
     await assert.rejects(streamChat({ endpoint: '/api/chat', messages: message, signal: new AbortController().signal,
@@ -296,7 +296,7 @@ test('failed or canceled streams discard unfinished speech and stop the typewrit
   const spoken = [];
   await assert.rejects(streamChat({ endpoint: '/api/chat', messages: message, signal: controller.signal,
     delay: 0, onText() {}, onAnimation() {}, onSpeechChunk(text) { spoken.push(text); controller.abort(); },
-    fetcher: async () => new Response(bytes('{"type":"speech","enabled":true}\n{"type":"text","text":"最初。次。"}\n{"type":"done"}\n'),
+    fetcher: async () => new Response(bytes('{"type":"speech","enabled":true}\n{"type":"text","text":"最初。\\n次。"}\n{"type":"done"}\n'),
       { headers: { 'Content-Type': 'application/x-ndjson' } }),
   }), { name: 'AbortError' });
   assert.deepEqual(spoken, ['最初。']);

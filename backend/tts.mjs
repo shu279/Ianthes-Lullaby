@@ -58,7 +58,11 @@ export async function handleTts(request, body, env, headers, fetcher = fetch, pa
   }
   if (env.TTS_LIMITER) {
     const limit = await env.TTS_LIMITER.limit({ key: request.headers.get('CF-Connecting-IP') || 'local' });
-    if (!limit.success) return fail(429, '読み上げが混み合っています。少し時間をおいてお試しください。');
+    if (!limit.success) {
+      headers.set('Retry-After', '60');
+      headers.set('Access-Control-Expose-Headers', 'Retry-After');
+      return fail(429, '読み上げが混み合っています。少し時間をおいてお試しください。');
+    }
   }
   const signal = AbortSignal.any([request.signal, AbortSignal.timeout(TIMEOUT_MS)]);
   try {

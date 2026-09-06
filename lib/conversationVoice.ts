@@ -1,14 +1,28 @@
 export type VoiceStatus = "idle" | "loading" | "playing" | "blocked" | "error";
 export type VoiceEnvelope = { fps: number; samples: number[] };
+export type SpeechResult = "complete" | "stopped" | "error" | "blocked";
+type SpeechCallbacks = { onStart?: (text: string) => void; onSettled?: (result: SpeechResult) => void };
+type Timing = { now: () => number; wait: (ms: number, signal: AbortSignal) => Promise<void> };
+const defaultTiming: Timing = {
+  now: () => Date.now(),
+  wait: (ms, signal) => new Promise((resolve, reject) => {
+    signal.throwIfAborted();
+    const abort = () => { clearTimeout(timer); reject(signal.reason); };
+    const timer = setTimeout(() => { signal.removeEventListener("abort", abort); resolve(); }, ms);
+    signal.addEventListener("abort", abort, { once: true });
+  }),
+};
 type SpeechQueue = {
   endpoint: string;
   context: AudioContext | null;
   abort: AbortController;
   pending: string[];
-  ready: { buffer: AudioBuffer; envelope: VoiceEnvelope }[];
+  ready: { text: string; buffer: AudioBuffer; envelope: VoiceEnvelope }[];
   generating: boolean;
   finished: boolean;
   failure?: { status: "error" | "blocked"; message?: string };
+  callbacks: SpeechCallbacks;
+  settle: (result: SpeechResult) => void;
 };
 
 /** Derive lip movement from the generated audio, including its silent pauses. */
@@ -39,6 +53,8 @@ export class ConversationVoice {
   private reaction: AudioBufferSourceNode | null = null;
   private reactionStart = 0;
   private speechQueue: SpeechQueue | null = null;
+  private nextRequestAt = 0;
+  private speechCache = new Map<string, { buffer: AudioBuffer; expires: number; bytes: number }>();
 
   mouthOpen(): number {
     if (!this.envelope || !this.reaction || this.context?.state !== "running") return 0;
@@ -54,6 +70,7 @@ export class ConversationVoice {
     private readonly onStatus: (status: VoiceStatus, message?: string) => void,
     private readonly createContext: () => AudioContext = () => new AudioContext(),
     private readonly fetcher: typeof fetch = fetch,
+    private readonly timing: Timing = defaultTiming,
   ) {}
 
   /** Resume from the Send gesture, before waiting for the AI network response. */
@@ -67,25 +84,65 @@ export class ConversationVoice {
   }
 
   private async loadSpeech(context: AudioContext, endpoint: string, text: string, signal: AbortSignal) {
+    const key = JSON.stringify([endpoint, text]);
+    const now = this.timing.now();
+    for (const [key, entry] of this.speechCache) if (entry.expires <= now) this.speechCache.delete(key);
+    const cached = this.speechCache.get(key);
+    if (cached) {
+      signal.throwIfAborted();
+      this.speechCache.delete(key);
+      this.speechCache.set(key, cached);
+      return cached.buffer;
+    }
+    signal = AbortSignal.any([signal, AbortSignal.timeout(140_000)]);
     const fetcher = this.fetcher;
-    const response = await fetcher(endpoint, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }), signal: AbortSignal.any([signal, AbortSignal.timeout(70_000)]),
-    });
+    let response: Response;
+    for (let attempt = 0; ; attempt++) {
+      signal.throwIfAborted();
+      const delay = this.nextRequestAt - this.timing.now();
+      if (delay > 60_250) throw new Error("音声は少しお休み中です。テキストで会話を続けられます。");
+      if (delay > 0) await this.timing.wait(delay, signal);
+      signal.throwIfAborted();
+      this.nextRequestAt = this.timing.now() + 3000;
+      response = await fetcher(endpoint, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }), signal: AbortSignal.any([signal, AbortSignal.timeout(70_000)]),
+      });
+      if (response.status !== 429) break;
+      const retry = response.headers.get("Retry-After");
+      const seconds = retry && /^\d+(?:\.\d+)?$/.test(retry) ? Number(retry)
+        : retry ? (Date.parse(retry) - this.timing.now()) / 1000 : 60;
+      const retryDelay = Math.max(1, Number.isFinite(seconds) ? seconds : 60) * 1000 + 250;
+      this.nextRequestAt = Math.max(this.nextRequestAt, this.timing.now() + retryDelay);
+      if (attempt >= 1 || retryDelay > 60_250) break;
+      await response.body?.cancel();
+    }
     if (!response.ok) {
       const error = await response.json().catch(() => null);
       throw new Error(typeof error?.error === "string" ? error.error : "音声を生成できませんでした。");
     }
     if (!response.headers.get("Content-Type")?.startsWith("audio/")) throw new Error("音声を読み取れませんでした。");
-    return context.decodeAudioData(await response.arrayBuffer());
+    const buffer = await context.decodeAudioData(await response.arrayBuffer());
+    signal.throwIfAborted();
+    const bytes = buffer.length * buffer.numberOfChannels * 4;
+    if (bytes <= 8_000_000) {
+      this.speechCache.set(key, { buffer, bytes, expires: this.timing.now() + 5 * 60_000 });
+      while (this.speechCache.size > 16 || [...this.speechCache.values()].reduce((total, item) => total + item.bytes, 0) > 8_000_000) {
+        this.speechCache.delete(this.speechCache.keys().next().value!);
+      }
+    }
+    return buffer;
   }
 
   /** Accept completed lines while Gemini is still streaming; prefetch one clip ahead. */
-  beginSpeech(endpoint: string) {
+  beginSpeech(endpoint: string, callbacks: SpeechCallbacks = {}) {
     this.stop();
+    let settle!: (result: SpeechResult) => void;
+    const completed = new Promise<SpeechResult>(resolve => { settle = resolve; });
     const queue: SpeechQueue = {
       endpoint, context: this.context, abort: new AbortController(),
       pending: [], ready: [], generating: false, finished: false,
+      callbacks, settle,
     };
     this.speechQueue = queue;
     return {
@@ -95,10 +152,13 @@ export class ConversationVoice {
         void this.fillSpeechQueue(queue);
       },
       finish: () => {
-        if (this.speechQueue !== queue) return;
-        queue.finished = true;
-        this.advanceSpeechQueue(queue);
+        if (this.speechQueue === queue) {
+          queue.finished = true;
+          this.advanceSpeechQueue(queue);
+        }
+        return completed;
       },
+      cancel: () => { if (this.speechQueue === queue) this.stop(); },
     };
   }
 
@@ -114,9 +174,10 @@ export class ConversationVoice {
         throw new Error("Playback blocked");
       }
       while (this.speechQueue === queue && queue.pending.length && !queue.ready.length) {
-        const buffer = await this.loadSpeech(queue.context, queue.endpoint, queue.pending.shift()!, queue.abort.signal);
+        const text = queue.pending.shift()!;
+        const buffer = await this.loadSpeech(queue.context, queue.endpoint, text, queue.abort.signal);
         if (this.speechQueue !== queue) return;
-        queue.ready.push({ buffer, envelope: speechEnvelope(buffer) });
+        queue.ready.push({ text, buffer, envelope: speechEnvelope(buffer) });
         this.advanceSpeechQueue(queue);
       }
     } catch (error) {
@@ -160,6 +221,7 @@ export class ConversationVoice {
       }
       this.reaction = source;
       this.onStatus("playing");
+      queue.callbacks.onStart?.(clip.text);
       return;
     }
     if (clip) {
@@ -173,6 +235,9 @@ export class ConversationVoice {
       this.speechQueue = null;
       this.envelope = undefined;
       this.onStatus(queue.failure?.status ?? "idle", queue.failure?.message);
+      const result = queue.failure?.status ?? "complete";
+      queue.settle(result);
+      queue.callbacks.onSettled?.(result);
     } else {
       this.onStatus("loading");
     }
@@ -182,10 +247,14 @@ export class ConversationVoice {
     this.stop();
     if (this.context) void this.context.close().catch(() => {});
     this.context = null;
+    this.clearCache();
   }
 
+  clearCache() { this.speechCache.clear(); }
+
   stop() {
-    this.speechQueue?.abort.abort();
+    const queue = this.speechQueue;
+    queue?.abort.abort();
     this.speechQueue = null;
     this.envelope = undefined;
     if (this.reaction) {
@@ -195,6 +264,10 @@ export class ConversationVoice {
       this.reaction = null;
     }
     this.onStatus("idle");
+    if (queue) {
+      queue.settle("stopped");
+      queue.callbacks.onSettled?.("stopped");
+    }
   }
 
 }

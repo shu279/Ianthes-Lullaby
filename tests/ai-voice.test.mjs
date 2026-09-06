@@ -13,7 +13,9 @@ function deferred() {
   return { promise, resolve };
 }
 
-function fixture(fetcher = async () => new Response(new Uint8Array([0]))) {
+function fixture(fetcher = async () => new Response(new Uint8Array([0])), timing) {
+  let now = 0;
+  timing ??= { now: () => now, wait: async (ms, signal) => { signal.throwIfAborted(); now += ms; } };
   const sources = [];
   const statuses = [];
   const context = {
@@ -31,7 +33,7 @@ function fixture(fetcher = async () => new Response(new Uint8Array([0]))) {
       return source;
     },
   };
-  const player = new ConversationVoice(status => statuses.push(status), () => context, fetcher);
+  const player = new ConversationVoice(status => statuses.push(status), () => context, fetcher, timing);
   return { player, context, sources, statuses };
 }
 
@@ -228,7 +230,7 @@ test('a failed next-line request finishes current speech, drops the tail, and al
   await flush();
   downloads[0].resolve(mp3());
   await flush();
-  downloads[1].resolve(Response.json({ error: '混み合っています。' }, { status: 429 }));
+  downloads[1].resolve(Response.json({ error: '音声を生成できませんでした。' }, { status: 502 }));
   await flush();
   assert.equal(statuses.at(-1), 'playing');
   assert.equal(sources[0].stopped, false);
@@ -259,5 +261,122 @@ test('empty and blocked speech queues never request audio', async () => {
   await flush();
   assert.equal(statuses.at(-1), 'blocked');
   assert.equal(downloads.length, 0);
+  player.dispose();
+});
+
+test('line callbacks fire on playback start, not on download, and completion waits for the final audio', async () => {
+  const { player, sources, downloads } = queuedSpeechFixture();
+  const shown = [];
+  let finished = false;
+  const queue = player.beginSpeech('/api/tts', { onStart: text => shown.push(text) });
+  queue.enqueue('最初。');
+  queue.enqueue('次。');
+  const completion = queue.finish().then(result => { finished = true; return result; });
+  await flush();
+  assert.deepEqual(shown, []);
+  downloads[0].resolve(mp3());
+  await flush();
+  assert.deepEqual(shown, ['最初。']);
+  downloads[1].resolve(mp3());
+  await flush();
+  assert.deepEqual(shown, ['最初。']);
+  assert.equal(finished, false);
+  sources[0].onended();
+  assert.deepEqual(shown, ['最初。', '次。']);
+  assert.equal(finished, false);
+  sources[1].onended();
+  assert.equal(await completion, 'complete');
+  player.dispose();
+});
+
+test('repeated lines reuse audio only in memory, expire, and reset clears cached audio', async () => {
+  let now = 0;
+  let calls = 0;
+  const { player, context, sources } = fixture(async () => { calls++; return mp3(); },
+    { now: () => now, wait: async ms => { now += ms; } });
+  context.decodeAudioData = async () => speechBuffer();
+  player.prepareAudio();
+  async function speak() {
+    const queue = player.beginSpeech('/api/tts');
+    queue.enqueue('おやすみ。');
+    const finished = queue.finish();
+    await flush();
+    sources.at(-1).onended();
+    assert.equal(await finished, 'complete');
+  }
+  await speak();
+  await speak();
+  assert.equal(calls, 1);
+  now += 5 * 60_000;
+  await speak();
+  assert.equal(calls, 2);
+  player.clearCache();
+  await speak();
+  assert.equal(calls, 3);
+  player.dispose();
+});
+
+test('rate limiting waits for Retry-After before one retry and keeps that cooldown across turns', async () => {
+  let now = 1000;
+  const waits = [];
+  const responses = [Response.json({ error: 'busy' }, { status: 429, headers: { 'Retry-After': '12' } }), mp3()];
+  let calls = 0;
+  const { player, context, sources, statuses } = fixture(async () => { calls++; return responses.shift(); }, {
+    now: () => now,
+    wait: (ms, signal) => {
+      const pending = deferred();
+      waits.push({ ms, signal, resolve() { now += ms; pending.resolve(); } });
+      return pending.promise;
+    },
+  });
+  context.decodeAudioData = async () => speechBuffer();
+  player.prepareAudio();
+  const queue = player.beginSpeech('/api/tts');
+  queue.enqueue('おやすみ。');
+  const finished = queue.finish();
+  await flush();
+  assert.equal(calls, 1);
+  assert.equal(waits[0].ms, 12_250);
+  assert.equal(statuses.at(-1), 'loading');
+  assert.equal(sources.length, 0);
+  waits[0].resolve();
+  await flush();
+  assert.equal(calls, 2);
+  assert.equal(statuses.at(-1), 'playing');
+  sources[0].onended();
+  assert.equal(await finished, 'complete');
+
+  const next = player.beginSpeech('/api/tts');
+  next.enqueue('またね。');
+  await flush();
+  assert.equal(calls, 2);
+  assert.equal(waits[1].ms, 3000);
+  next.cancel();
+  assert.equal(await next.finish(), 'stopped');
+  assert.ok(waits[1].signal.aborted);
+  waits[1].resolve();
+  await flush();
+  assert.equal(calls, 2, 'canceling cooldown must prevent the retry');
+  player.dispose();
+});
+
+test('persistent rate limits stop after one retry and retain a long server cooldown', async () => {
+  let calls = 0;
+  let now = 0;
+  const { player, context, sources } = fixture(async () => {
+    calls++;
+    return Response.json({ error: 'busy' }, { status: 429, headers: { 'Retry-After': calls === 1 ? '2' : '300' } });
+  }, { now: () => now, wait: async ms => { now += ms; } });
+  context.decodeAudioData = async () => speechBuffer();
+  player.prepareAudio();
+  const first = player.beginSpeech('/api/tts');
+  first.enqueue('おやすみ。');
+  assert.equal(await first.finish(), 'error');
+  assert.equal(calls, 2);
+  assert.equal(sources.length, 0);
+  const next = player.beginSpeech('/api/tts');
+  next.enqueue('またね。');
+  assert.equal(await next.finish(), 'error');
+  assert.equal(calls, 2, 'a new turn must not bypass provider cooldown');
   player.dispose();
 });

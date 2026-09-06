@@ -70,7 +70,7 @@ export async function streamChat({ endpoint, messages, signal, onText, onAnimati
     speechBuffer += text;
     // Keep at most six requests per reply; unusually fragmented tails are grouped.
     while (speechChunks < 5) {
-      const boundary = /[。！？!?\n]+[」』）】”’"]*/u.exec(speechBuffer);
+      const boundary = /\n+/u.exec(speechBuffer);
       if (!boundary) break;
       const end = boundary.index + boundary[0].length;
       const content = speechBuffer.slice(0, end);

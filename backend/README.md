@@ -82,18 +82,23 @@ Response events are NDJSON, for example:
 
 Animations are restricted to the shared catalog: `idle`, `laugh`, `surprise`,
 `attack`, `pose`, `intro`, `sleepIn`, and `sleepOut`; text renders as
-plain React text. Responses appear character by character. Leaving the page or
+plain React text. Each line appears when its audio starts; while waiting, the
+chat shows `...`. The first animation also waits for speech to begin. Leaving the page or
 **停止** aborts the request. Failed/partial responses are not added to history.
 The server emits one `speech` event for VOICEVOX clients. When speech is enabled,
-the browser sends each completed line or sentence as `{ "text": "…" }` to
-`/api/tts` as it arrives, independently of the typewriter display. The prompt asks
-for a short first sentence and a newline after each sentence. Newlines and
-Japanese sentence punctuation form boundaries; the final unfinished line is
+the browser sends each completed line as `{ "text": "…" }` to
+`/api/tts` as it arrives, before displaying that line. The prompt asks for two
+or three short lines, keeping interjections on the same line. Only newlines
+form boundaries; punctuation alone does not add requests. The final unfinished line is
 flushed only on a successful `done` event. Replies use at most six synthesis
 requests, grouping excess lines into the final request. The first clip plays
 immediately when ready. Downloads are serial, with one decoded clip prefetched
 while the current clip plays; playback stays in order without overlap. A slow
 provider can still cause initial delay or pauses between clips.
+`../lib/spokenChat.ts` holds the received text separately from the visible
+reply. Playback callbacks reveal each line, and history is committed only when
+playback finishes. Silent requests and unavailable/failed audio fall back to
+text. Stop cancels the turn without committing an unspoken tail.
 Requests such as 「声を出さないで」「音声なし」「読み上げないで」
 set `enabled` to `false` for that reply. Clients that omit `speech` receive text
 and animation events only. The recorded-voice catalog and `voice` events have
@@ -112,8 +117,18 @@ it deletes them; do not assume private or permanent storage at the provider.
 The Worker follows only validated `audio[1-9].tts.quest` job URLs, rejects
 redirects, bounds audio size to 8 MB, and limits synthesis/polling to 60 seconds
 and at most 42 outbound requests, checking job readiness at one-second intervals.
-It honors provider rate limits without
-automatically repeating synthesis. Provider errors leave text chat usable.
+The Worker returns `Retry-After` for both local and provider rate limits and
+does not retry synthesis itself. The browser retries a 429 once after the
+specified delay (up to 60 seconds, plus a small timing margin). A second 429,
+a longer delay, or another failure falls back to text. The browser retains
+the cooldown across turns and spaces uncached requests at least three seconds
+apart. Stop cancels pending waits as well as network requests.
+
+The browser reuses exact-text audio only in page memory for five minutes,
+bounded to 16 clips and 8 MB of decoded PCM. Reset and page disposal clear it.
+There is no disk, localStorage, or shared server audio cache. An optional
+`VOICEVOX_API_KEY` enables the provider's faster synthesis mode; optimization
+in this app cannot change the external VOICEVOX engine or remove provider limits.
 
 Web Audio is resumed from Send. The browser computes a 50 Hz RMS mouth envelope
 from the decoded MP3 and tracks playback time. Stop, a new message, reset, page
