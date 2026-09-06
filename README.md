@@ -31,6 +31,10 @@ recent conversation history, text synchronized with each spoken line, and all ei
 installed animations. BGM volume stays unchanged.
 Zooming in centers the camera around the character's chest. The chat can be
 collapsed with Close; there is no conversation-reset button.
+The interface uses [Zen Maru Gothic](https://github.com/googlefonts/zen-marugothic)
+throughout, including Japanese messages and form controls. `next/font` bundles
+the regular and bold fonts with the static site; visitors load them from GitHub
+Pages. Building requires access to Google Fonts to download the font assets.
 
 `lib/chatAnimations.json` is the shared animation catalog: `idle`, `laugh`,
 `surprise`, `attack` (a light angry reaction), `pose`, `intro`, `sleepIn`, and
