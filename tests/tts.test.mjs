@@ -46,7 +46,7 @@ test('TTS posts only reply text and fixed speaker, proxies audio, and keeps opti
   assert.equal(response.headers.get('Cache-Control'), 'no-store');
   assert.equal(response.headers.get('Access-Control-Allow-Origin'), env.ALLOWED_ORIGINS);
   assert.deepEqual([...new URLSearchParams(calls[0].init.body)], [['speaker', '0'], ['text', text], ['key', 'secret-voice-key']]);
-  assert.ok(calls.every(call => call.init.redirect === 'error'));
+  assert.ok(calls.every(call => call.init.redirect === 'manual'), 'Workers supports manual redirect handling');
   assert.deepEqual(new Uint8Array(await response.arrayBuffer()), new Uint8Array([73, 68, 51, 4]));
   assert.ok(!JSON.stringify([...response.headers]).includes('secret-voice-key'));
 });
@@ -72,6 +72,13 @@ test('TTS preserves provider retry delay and never retries synthesis automatical
 });
 
 test('TTS rejects untrusted job URLs and derives audio from the validated job', async () => {
+  let redirects = 0;
+  const redirected = await handleChat(request(), env, async () => {
+    redirects++;
+    return new Response('', { status: 302, headers: { Location: 'https://bad.example' } });
+  });
+  assert.equal(redirected.status, 502);
+  assert.equal(redirects, 1, 'redirects must never be followed');
   for (const url of ['http://127.0.0.1/status.json', base.replace('audio2.tts.quest', 'audio2.tts.quest.bad.example') + 'status.json',
     base.replace('https://', 'https://user:password@') + 'status.json', `${base}status.json?target=private`, `${base}other.json`]) {
     let calls = 0;

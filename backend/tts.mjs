@@ -67,7 +67,8 @@ export async function handleTts(request, body, env, headers, fetcher = fetch, pa
     if (env.VOICEVOX_API_KEY) form.set('key', env.VOICEVOX_API_KEY);
     const synthesis = await fetcher(SYNTHESIS_URL, {
       method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: form.toString(), signal, redirect: 'error',
+      // Workers supports manual redirect handling; non-2xx responses are rejected below.
+      body: form.toString(), signal, redirect: 'manual',
     });
     const job = await readJSON(synthesis).catch(error => {
       if (synthesis.status === 429) return { retryAfter: synthesis.headers.get('Retry-After') || 30 };
@@ -84,11 +85,11 @@ export async function handleTts(request, body, env, headers, fetcher = fetch, pa
     // At most 22 subrequests, including synthesis and audio, within Workers Free limits.
     for (let attempt = 0; attempt < 20; attempt++) {
       signal.throwIfAborted();
-      const response = await fetcher(urls.status, { signal, redirect: 'error' });
+      const response = await fetcher(urls.status, { signal, redirect: 'manual' });
       const status = await readJSON(response);
       if (!response.ok || !status.success || status.isAudioError) throw new Error('Synthesis failed');
       if (status.isAudioReady) {
-        const audio = await fetcher(urls.audio, { signal, redirect: 'error' });
+        const audio = await fetcher(urls.audio, { signal, redirect: 'manual' });
         if (!audio.ok || !audio.headers.get('Content-Type')?.startsWith('audio/')) {
           await audio.body?.cancel();
           throw new Error('Audio unavailable');
