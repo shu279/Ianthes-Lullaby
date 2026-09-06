@@ -32,7 +32,7 @@ export default function AIChatPanel({ onAnimationRequest, onBusyChange, voiceRef
   const focusOnToggle = useRef(false);
 
   useEffect(() => {
-    const voice = new ConversationVoice(() => new Audio(), (status, message) => {
+    const voice = new ConversationVoice((status, message) => {
       setVoiceStatus(status);
       setVoiceError(message || "");
     });
@@ -71,7 +71,7 @@ export default function AIChatPanel({ onAnimationRequest, onBusyChange, voiceRef
     const content = input.trim();
     if (!content || request.current || !endpoint) return;
     voiceRef.current?.stop();
-    voiceRef.current?.prepareReactions([]);
+    voiceRef.current?.prepareAudio();
     const speechQueue = voiceRef.current?.beginSpeech(speechEndpoint);
     const controller = new AbortController();
     request.current = controller;
@@ -94,7 +94,7 @@ export default function AIChatPanel({ onAnimationRequest, onBusyChange, voiceRef
       setHistory([...messages, { role: "assistant", content: text }]);
       speechQueue?.finish();
     } catch (failure) {
-      voiceRef.current?.stopReaction();
+      voiceRef.current?.stop();
       setInput(content);
       setError(controller.signal.aborted ? "返事を中断しました。" :
         failure instanceof Error ? failure.message : "AIに接続できませんでした。");
@@ -108,7 +108,7 @@ export default function AIChatPanel({ onAnimationRequest, onBusyChange, voiceRef
 
   function clearHistory() {
     if (request.current) return;
-    voiceRef.current?.stopReaction();
+    voiceRef.current?.stop();
     setHistory([]);
     setError("");
   }
@@ -132,7 +132,7 @@ export default function AIChatPanel({ onAnimationRequest, onBusyChange, voiceRef
             <span className="aiSpeaker">{message.role === "user" ? "あなた" : "イアンサ"}</span>{message.content}
           </p>)}
           {pendingUser && <p className="aiMessage user"><span className="aiSpeaker">あなた</span>{pendingUser}</p>}
-          {busy && <p className="aiMessage assistant"><span className="aiSpeaker">イアンサ</span>{reply || "…"}<span className="aiCursor" aria-hidden="true">▍</span></p>}
+          {busy && <p className="aiMessage assistant"><span className="aiSpeaker">イアンセ</span>{reply || "…"}<span className="aiCursor" aria-hidden="true">▍</span></p>}
         </div>
         <p className="srOnly" aria-live="polite">{busy ? "返事をしています。" : history.at(-1)?.content}</p>
         {error && <p className="aiError" role="alert">{error}</p>}
@@ -150,7 +150,7 @@ export default function AIChatPanel({ onAnimationRequest, onBusyChange, voiceRef
                 event.preventDefault(); event.currentTarget.form?.requestSubmit();
               }
             }} />
-          {busy ? <button type="button" onClick={() => { voiceRef.current?.stopReaction(); request.current?.abort(); }}>停止</button>
+          {busy ? <button type="button" onClick={() => { voiceRef.current?.stop(); request.current?.abort(); }}>停止</button>
             : <button type="submit" disabled={!endpoint || !input.trim()}>送信</button>}
           {!busy && speaking && <button type="button" onClick={() => voiceRef.current?.stop()}>停止</button>}
         </form>

@@ -6,7 +6,6 @@ import ts from 'typescript';
 import worker, { handleChat, validateMessages } from '../backend/chat.mjs';
 import { readSSE, ReplyParser } from '../backend/stream.mjs';
 import { buildSystemPrompt, retrieveQuotes, requestsSilentVoice } from '../backend/persona.mjs';
-import aiVoices from '../lib/aiVoices.json' with { type: 'json' };
 import chatAnimations from '../lib/chatAnimations.json' with { type: 'json' };
 
 const source = await readFile(new URL('../lib/aiChat.ts', import.meta.url), 'utf8');
@@ -29,7 +28,7 @@ function provider(frames) {
 }
 const part = text => ({ candidates: [{ content: { parts: [{ text }] } }] });
 const stop = { candidates: [{ finishReason: 'STOP' }] };
-const success = () => provider([part('[[lau'), part('gh|chuc'), part('kle]]\n'), part('ふふ。🌙ゆっくり休んでね。'), stop]);
+const success = () => provider([part('[[lau'), part('gh]]\n'), part('ふふ。🌙ゆっくり休んでね。'), stop]);
 
 test('request validation rejects system injection, nonalternating or oversized history', () => {
   assert.ok(validateMessages({ messages: message }));
@@ -85,7 +84,7 @@ test('every installed animation passes from Gemini through the backend to the ch
   for (const animation of Object.keys(chatAnimations)) {
     const events = [];
     const response = await handleChat(request(), env, async () => provider([
-      part(`[[${animation.slice(0, 2)}`), part(`${animation.slice(2)}|hmm]]\nんー。`), stop,
+      part(`[[${animation.slice(0, 2)}`), part(`${animation.slice(2)}]]\nんー。`), stop,
     ]));
     const reply = await streamChat({ endpoint: '/api/chat', messages: message, signal: new AbortController().signal, delay: 0,
       onText() {}, onAnimation: value => events.push(value), fetcher: async () => response });
@@ -95,21 +94,22 @@ test('every installed animation passes from Gemini through the backend to the ch
   }
 });
 
-test('voice selection accepts the catalog, supports silence, and rejects arbitrary IDs or paths', () => {
-  for (const id of [...Object.keys(aiVoices), 'none', 'constructor', '__proto__', 'https://bad.example/voice.wav']) {
+test('retired recording directives are discarded while allowed animations still work', () => {
+  for (const id of ['chuckle', 'none', 'constructor', '__proto__', 'https://bad.example/voice.wav']) {
     const events = [];
     const parser = new ReplyParser(event => events.push(event));
     for (const char of `[[idle|${id}]]\nそうなのね。`) parser.push(char);
     parser.push('', true);
-    assert.deepEqual(events.filter(event => event.type === 'voice'), Object.hasOwn(aiVoices, id) ? [{ type: 'voice', voice: id }] : []);
+    assert.deepEqual(events.filter(event => event.type === 'voice'), []);
+    assert.deepEqual(events.filter(event => event.type === 'animation'), [{ type: 'animation', animation: 'idle' }]);
     assert.equal(events.filter(event => event.type === 'text').map(event => event.text).join(''), 'そうなのね。');
   }
   const prompt = buildSystemPrompt('猫のまねをして');
-  for (const id of Object.keys(aiVoices)) assert.ok(prompt.includes(`${id}:`));
-  assert.ok(prompt.includes('none'));
+  assert.ok(prompt.includes('[[アニメーション]]'));
+  assert.ok(!prompt.includes('ボイスID'));
 });
 
-test('end to end streaming protects key, passes history, triggers voice with first text and reveals characters', async () => {
+test('end to end streaming protects key, passes history, triggers animation and reveals characters', async () => {
   const messages = [...message, { role: 'assistant', content: 'そうなのね。' }, { role: 'user', content: '一緒に休もう' }];
   let upstreamRequest;
   const response = await handleChat(request(messages), env, async (url, init) => {
@@ -118,13 +118,11 @@ test('end to end streaming protects key, passes history, triggers voice with fir
   });
   const animations = [];
   const displayed = [];
-  const voices = [];
   const reply = await streamChat({ endpoint: '/api/chat', messages, signal: new AbortController().signal,
     onText: text => displayed.push(text), onAnimation: animation => animations.push(animation),
-    onVoice: voice => voices.push({ voice, text: displayed.at(-1) }), delay: 0, fetcher: async () => response });
+    delay: 0, fetcher: async () => response });
   assert.equal(reply, 'ふふ。🌙ゆっくり休んでね。');
   assert.deepEqual(animations, ['laugh']);
-  assert.deepEqual(voices, [{ voice: 'chuckle', text: 'ふ' }]);
   assert.deepEqual(displayed.map(text => Array.from(text).length), Array.from({ length: Array.from(reply).length }, (_, index) => index + 1));
   assert.deepEqual(upstreamRequest.body.contents.map(item => item.role), ['user', 'model', 'user']);
   assert.equal(upstreamRequest.init.headers['x-goog-api-key'], env.GEMINI_API_KEY);
@@ -132,8 +130,7 @@ test('end to end streaming protects key, passes history, triggers voice with fir
   assert.ok(!reply.includes('[['));
 });
 
-test('client rejects unknown voices and ignores duplicate or late voice events', async () => {
-  const voices = [];
+test('client ignores retired recording events without interrupting text', async () => {
   const events = [
     { type: 'voice', voice: 'constructor' },
     { type: 'voice', voice: '/voice/ai/meow.wav' },
@@ -145,28 +142,26 @@ test('client rejects unknown voices and ignores duplicate or late voice events',
     { type: 'done' },
   ];
   const reply = await streamChat({ endpoint: '/api/chat', messages: message, signal: new AbortController().signal, delay: 0,
-    onText() {}, onAnimation() {}, onVoice: voice => voices.push(voice),
+    onText() {}, onAnimation() {}, onSpeechChunk() { assert.fail("Retired voice events must not request speech"); },
     fetcher: async () => new Response(bytes(events.map(event => JSON.stringify(event)).join('\n')), { headers: { 'Content-Type': 'application/x-ndjson' } }),
   });
   assert.equal(reply, 'うーん。少し考えるわね。');
-  assert.deepEqual(voices, ['thinking']);
 });
 
-test('a voice tag without a reply never plays audio', async () => {
-  const voices = [];
+test('a retired voice tag without a reply never synthesizes speech', async () => {
   await assert.rejects(streamChat({ endpoint: '/api/chat', messages: message, signal: new AbortController().signal, delay: 0,
-    onText() {}, onAnimation() {}, onVoice: voice => voices.push(voice),
+    onText() {}, onAnimation() {}, onSpeechChunk() { assert.fail("Retired voice events must not request speech"); },
     fetcher: async () => new Response(bytes('{"type":"voice","voice":"meow"}\n{"type":"error","message":"途中"}\n'), { headers: { 'Content-Type': 'application/x-ndjson' } }),
   }), /途中/);
-  assert.deepEqual(voices, []);
 });
 
-test('an explicit request without voice overrides a provider-selected recording for that reply', async () => {
+test('explicit silent requests disable synthesized speech for the current reply', async () => {
   for (const text of ['声は出さずにおやすみだけお願い', '声を出さないで', '音声なしで話して', 'ボイスはいらない']) {
     assert.equal(requestsSilentVoice(text), true);
-    const response = await handleChat(request([{ role: 'user', content: text }]), env, async () => success());
+    const messages = [{ role: 'user', content: text }];
+    const response = await handleChat(request(messages, { body: JSON.stringify({ messages, speech: 'voicevox' }) }), env, async () => success());
     const events = (await response.text()).trim().split('\n').map(line => JSON.parse(line));
-    assert.equal(events.some(event => event.type === 'voice'), false);
+    assert.deepEqual(events.find(event => event.type === 'speech'), { type: 'speech', enabled: false });
     assert.equal(events.some(event => event.type === 'done'), true);
     assert.ok(events.some(event => event.type === 'text'));
   }
@@ -218,16 +213,14 @@ test('VOICEVOX mode reads reply sentences without recorded reactions and honors 
     });
     const speech = [];
     const spoken = [];
-    const voices = [];
     const reply = await streamChat({ endpoint: '/api/chat', messages, speech: 'voicevox', signal: new AbortController().signal,
-      delay: 0, onText() {}, onAnimation() {}, onSpeech: value => speech.push(value), onVoice: value => voices.push(value),
+      delay: 0, onText() {}, onAnimation() {}, onSpeech: value => speech.push(value),
       onSpeechChunk: text => spoken.push(text),
       fetcher: async (url, init) => {
         assert.equal(JSON.parse(init.body).speech, 'voicevox');
         return response;
       } });
     assert.deepEqual(speech, [allowed]);
-    assert.deepEqual(voices, []);
     assert.deepEqual(spoken, allowed ? ['ふふ。', '🌙ゆっくり休んでね。'] : []);
     assert.equal(reply, 'ふふ。🌙ゆっくり休んでね。');
     assert.ok(prompt.includes('台詞全体が音声で読み上げられます'));

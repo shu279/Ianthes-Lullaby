@@ -1,7 +1,5 @@
-import aiVoices from "./aiVoices.json";
 import chatAnimations from "./chatAnimations.json";
 
-export type ChatVoice = keyof typeof aiVoices;
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 export type ChatAnimation = keyof typeof chatAnimations;
 
@@ -22,13 +20,12 @@ function wait(ms: number, signal: AbortSignal) {
   });
 }
 
-export async function streamChat({ endpoint, messages, signal, onText, onAnimation, onVoice, onSpeech, onSpeechChunk, speech, delay = 22, fetcher = fetch }: {
+export async function streamChat({ endpoint, messages, signal, onText, onAnimation, onSpeech, onSpeechChunk, speech, delay = 22, fetcher = fetch }: {
   endpoint: string;
   messages: ChatMessage[];
   signal: AbortSignal;
   onText: (text: string) => void;
   onAnimation: (animation: ChatAnimation) => void;
-  onVoice?: (voice: ChatVoice) => void;
   onSpeech?: (enabled: boolean) => void;
   onSpeechChunk?: (text: string) => void;
   speech?: 'voicevox';
@@ -57,8 +54,6 @@ export async function streamChat({ endpoint, messages, signal, onText, onAnimati
   const cancelReader = () => { void reader.cancel().catch(() => {}); };
   activeSignal.addEventListener("abort", cancelReader, { once: true });
   let done = false;
-  let voice: ChatVoice | undefined;
-  let voiceStarted = false;
   let speechReceived = false;
   let speechEnabled = false;
   let speechBuffer = "";
@@ -91,10 +86,6 @@ export async function streamChat({ endpoint, messages, signal, onText, onAnimati
         reply += character;
         onText(reply);
         activeSignal.throwIfAborted();
-        if (!voiceStarted && reply.trim()) {
-          voiceStarted = true;
-          if (voice) onVoice?.(voice);
-        }
         if (delay) await wait(delay, activeSignal);
       }
     }).catch(error => { displayAbort.abort(error); });
@@ -120,8 +111,6 @@ export async function streamChat({ endpoint, messages, signal, onText, onAnimati
           onSpeech?.(event.enabled);
         } else if (event.type === "animation" && typeof event.animation === "string" && Object.hasOwn(chatAnimations, event.animation)) {
           onAnimation(event.animation as ChatAnimation);
-        } else if (event.type === "voice" && !receivedReply.trim() && !voice && typeof event.voice === "string" && Object.hasOwn(aiVoices, event.voice)) {
-          voice = event.voice as ChatVoice;
         } else if (event.type === "text" && typeof event.text === "string") {
           if (receivedReply.length + event.text.length > 1200) throw new Error("AIの応答が長すぎます。");
           receivedReply += event.text;

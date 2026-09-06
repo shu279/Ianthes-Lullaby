@@ -4,8 +4,10 @@ node_modules
 out
 tsconfig.tsbuildinfo
 
-# Original voice exports; deployment-ready copies live in public/voice/.
+# Retired recordings and background model are kept locally, not published.
 /voice/
+/public/voice/
+/public/models/background.glb
 
 # Local environment, logs, and editor/cache files.
 .env*

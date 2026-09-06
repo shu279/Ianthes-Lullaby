@@ -81,7 +81,7 @@ export async function handleChat(request, env, fetcher = fetch) {
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
       signal: abort.signal,
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: buildSystemPrompt(messages.at(-1).content, env.ENABLE_RAG !== 'false', useTts) }] },
+        systemInstruction: { parts: [{ text: buildSystemPrompt(messages.at(-1).content, env.ENABLE_RAG !== 'false') }] },
         contents: messages.map(message => ({ role: message.role === 'assistant' ? 'model' : 'user', parts: [{ text: message.content }] })),
         generationConfig: { temperature: 0.8, maxOutputTokens: 512 },
       }),
@@ -115,7 +115,7 @@ export async function handleChat(request, env, fetcher = fetch) {
         controller.enqueue(encoder.encode(JSON.stringify(event) + '\n'));
       };
       const allowSpeech = !requestsSilentVoice(messages.at(-1).content);
-      const parser = new ReplyParser(emit, { allowVoice: !useTts && allowSpeech });
+      const parser = new ReplyParser(emit);
       try {
         if (useTts) emit({ type: 'speech', enabled: allowSpeech });
         for await (const data of readSSE(upstream.body)) {

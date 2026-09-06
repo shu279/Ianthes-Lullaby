@@ -57,14 +57,10 @@ Worker's secret storage; it is not needed by GitHub Actions.
   this optional retrieval; no embeddings or external database are required.
 - `chat.mjs`: validates history, adds the server-owned system prompt, sends a Gemini
   streaming request, and returns newline-delimited JSON events.
-- `stream.mjs`: parses Gemini SSE chunks and extracts the first-line animation and
-  animation tag, for example `[[laugh]]`. Older recorded-voice clients can still
-  use `[[laugh|chuckle]]`.
+- `stream.mjs`: parses Gemini SSE chunks and extracts the first-line animation
+  tag, for example `[[laugh]]`. Retired recording directives are ignored.
 - `tts.mjs`: requests speech for a reply segment from the unofficial TTS Quest VOICEVOX API,
   waits for that job, and returns MP3 audio. Speaker `0` is 四国めたん（あまあま）.
-- `../lib/aiVoices.json`: shared recorded-voice catalog, including the spoken
-  reactions and when they fit. Gemini picks one voice ID or `none` per reply.
-  Changes to this catalog require both frontend and backend deployment.
 - `../lib/chatAnimations.json`: shared catalog of all eight installed animation
   IDs, files and usage descriptions. Deploy both sides when changing it.
 - `GEMINI_MODEL`: defaults to `gemini-3.5-flash-lite`; change it in the Worker vars
@@ -99,9 +95,9 @@ immediately when ready. Downloads are serial, with one decoded clip prefetched
 while the current clip plays; playback stays in order without overlap. A slow
 provider can still cause initial delay or pauses between clips.
 Requests such as 「声を出さないで」「音声なし」「読み上げないで」
-set `enabled` to `false` for that reply. These clients do not play recorded
-reactions over synthesized speech. Clients that omit `speech` retain the legacy
-allowlisted `voice` event and recorded reaction behavior.
+set `enabled` to `false` for that reply. Clients that omit `speech` receive text
+and animation events only. The recorded-voice catalog and `voice` events have
+been removed; the backend no longer depends on local audio files.
 
 `/api/tts` accepts up to 1,200 characters, fixes the voice on the server, and
 applies a separate limit of 24 synthesis requests per minute per IP/location.

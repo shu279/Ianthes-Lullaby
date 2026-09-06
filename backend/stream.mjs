@@ -1,4 +1,3 @@
-import aiVoices from '../lib/aiVoices.json' with { type: 'json' };
 import chatAnimations from '../lib/chatAnimations.json' with { type: 'json' };
 
 /** Parse SSE even when UTF-8 bytes, CRLFs, or data fields span network chunks. */
@@ -32,11 +31,11 @@ export async function* readSSE(body) {
   }
 }
 
-/** Only the first line can select allowlisted animation and recorded voice IDs. */
+/** Only the first line can select an allowlisted animation. */
 export class ReplyParser {
   buffer = '';
   started = false;
-  constructor(emit, { allowVoice = true } = {}) { this.emit = emit; this.allowVoice = allowVoice; }
+  constructor(emit) { this.emit = emit; }
   push(text, final = false) {
     if (this.started) {
       if (text) this.emit({ type: 'text', text });
@@ -47,10 +46,9 @@ export class ReplyParser {
     if (end < 0 && this.buffer.length < 80 && !final) return;
     const first = (end < 0 ? this.buffer : this.buffer.slice(0, end)).trim();
     const tag = /^\[\[([^\]]+)\]\]$/.exec(first);
-    const [animationId, voiceId] = tag ? tag[1].split('|').map(value => value.trim()) : [];
+    const [animationId] = tag ? tag[1].split('|').map(value => value.trim()) : [];
     const animation = animationId && Object.hasOwn(chatAnimations, animationId) ? animationId : 'idle';
     this.emit({ type: 'animation', animation });
-    if (this.allowVoice && voiceId && Object.hasOwn(aiVoices, voiceId)) this.emit({ type: 'voice', voice: voiceId });
     this.started = true;
     // An unknown directive is discarded; untagged prose is still displayed.
     const reply = tag ? (end < 0 ? '' : this.buffer.slice(end + 1)) : this.buffer;

@@ -3,7 +3,7 @@ name: Deploy AI chat API
 on:
   push:
     branches: [main]
-    paths: ["backend/**", "lib/aiVoices.json", "lib/chatAnimations.json", ".github/workflows/chat-api.yml"]
+    paths: ["backend/**", "lib/chatAnimations.json", ".github/workflows/chat-api.yml"]
   workflow_dispatch:
 
 permissions:

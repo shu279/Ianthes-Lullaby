@@ -58,32 +58,31 @@ collapses it and retains the conversation. Explicit requests such as
 The Settings panel credits [VOICEVOX:四国めたん](https://voicevox.hiroshiba.jp/product/shikoku_metan/)
 under the [voice-library terms](https://zunko.jp/con_ongen_kiyaku.html).
 
-The earlier reaction clips and catalog in `public/voice/ai/` and
-`lib/aiVoices.json` remain available as source material. The backend still
-supports recorded reactions for older cached clients.
+The earlier recorded reactions, their catalog and the unused branching dialogue
+code have been removed. Replies use generated VOICEVOX speech.
 
 GitHub Pages serves the frontend; the separate Gemini backend in `backend/`
 handles `POST /api/chat` and `POST /api/tts` on Cloudflare Workers. The optional quote retrieval uses
 local authored examples. See [backend setup and deployment](backend/README.md).
 A Gemini API key and a deployed API URL are required for real AI replies.
 
-## Recordings and lip sync
+## Local assets and lip sync
 
 The character's `Mouth_a` shape follows the audio's volume envelope at the
 current playback position, closing during pauses and after playback. VOICEVOX
 envelopes are calculated from decoded audio at runtime; generated clips are not
-kept in the recording cache.
-`lib/voiceEnvelopes.json` is generated from the published WAVs; regenerate it
-with `python3 scripts/generate-voice-envelopes.py` after changing the recordings.
-The original `/voice/` folder is ignored by Git. Published WAVs and their volume
-envelopes are tracked so GitHub Pages builds contain all required assets.
+retained after playback.
 
-The previous branching **ボイス会話** UI and mode switch have been removed.
-Its authored dialogue remains in `lib/conversationTree.ts` and its numbered
-recordings in `public/voice/001.wav`–`011.wav` as source material.
+`voice/`, `public/voice/` and `public/models/background.glb` are ignored by Git.
+The original recordings and background model can remain locally, but are absent
+from fresh checkouts and GitHub Pages deployments. Files under local `public/`
+are still served by the development server and copied by a local Next.js build;
+use a clean checkout when preparing an export for publication.
+The app does not load a background model. The character, eight animations,
+textures and BGM remain tracked and published.
 
-Run `npm test` for streaming, audio-asset, cancellation, lip-sync, and
-playback-error checks, plus validation of the archived dialogue data.
+Run `npm test` for streaming, TTS, cancellation, lip-sync, ordered playback,
+and animation checks. No retired recordings or background files are required.
 
 The sections below preserve the original project design and roadmap; the
 current app behavior is described above.
